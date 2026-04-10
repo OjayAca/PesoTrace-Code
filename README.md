@@ -58,3 +58,8 @@ The API runs on `http://localhost:5000`.
 - The documentation suggested React and Node.js, which this implementation follows.
 - The documentation listed MySQL, MongoDB, or PostgreSQL as suggested databases. For this local classroom build, persistence is implemented with a JSON datastore so the project can run immediately without external database setup.
 - Transactions are expense-only because income tracking was listed under future improvements and was intentionally left out.
+
+ACCOUNT:
+- Name:OjayAca                                                                                    
+  - Email: ojayacasio@gmail.com                                                                       
+  - Created: 2026-04-02T16:05:29.710Z   

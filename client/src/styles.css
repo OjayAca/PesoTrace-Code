@@ -559,6 +559,94 @@ textarea { resize: vertical; }
   font-weight: 600;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top, rgba(15, 124, 96, 0.16), transparent 35%),
+    rgba(7, 17, 27, 0.58);
+  backdrop-filter: blur(14px);
+}
+
+.confirm-modal {
+  width: min(100%, 32rem);
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.35rem;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 40%),
+    var(--surface-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.confirm-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.confirm-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.confirm-modal-danger .confirm-modal-icon {
+  color: var(--danger);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04), var(--danger-soft));
+  border-color: rgba(192, 57, 43, 0.22);
+}
+
+.confirm-modal-accent .confirm-modal-icon {
+  color: var(--accent);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04), var(--accent-soft));
+  border-color: rgba(15, 124, 96, 0.22);
+}
+
+.confirm-modal-copy {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.confirm-modal-copy h2 {
+  font-size: clamp(1.45rem, 3vw, 1.8rem);
+}
+
+.confirm-modal-copy > p:last-child,
+.confirm-modal-copy > p:first-of-type {
+  color: var(--text-secondary);
+}
+
+.confirm-modal-note {
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  font-size: 0.9rem;
+}
+
+.confirm-modal-danger .confirm-modal-note {
+  border-color: rgba(192, 57, 43, 0.14);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.02), var(--danger-soft));
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
 /* ─── Topbar ─── */
 .topbar {
   display: flex;
@@ -1411,5 +1499,25 @@ textarea { resize: vertical; }
   .settings-grid,
   .filter-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 1rem;
+  }
+
+  .confirm-modal {
+    padding: 1rem;
+  }
+
+  .confirm-modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-modal-actions .secondary-button,
+  .confirm-modal-actions .primary-button,
+  .confirm-modal-actions .danger-button {
+    width: 100%;
   }
 }

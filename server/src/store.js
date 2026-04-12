@@ -409,7 +409,7 @@ export function createMySqlStore(env = process.env) {
       ),
       pool.query(
         `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                type, category, repeat_cycle AS repeatCycle, created_at AS createdAt,
+                type, category, created_at AS createdAt,
                 updated_at AS updatedAt
          FROM recurring_templates
          ORDER BY start_date ASC, id ASC`,
@@ -712,7 +712,7 @@ export function createMySqlStore(env = process.env) {
     async findRecurringTemplate(userId, id) {
       return getOne(
         `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                type, category, repeat_cycle AS repeatCycle, created_at AS createdAt,
+                type, category, created_at AS createdAt,
                 updated_at AS updatedAt
          FROM recurring_templates
          WHERE user_id = ? AND id = ?

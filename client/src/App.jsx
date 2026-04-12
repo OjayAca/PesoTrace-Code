@@ -190,6 +190,68 @@ function AppShell() {
   return user ? <Dashboard /> : <AuthScreen />;
 }
 
+function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
+  if (!dialog) {
+    return null;
+  }
+
+  const Icon = dialog.icon || AlertCircle;
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={submitting ? undefined : onCancel}>
+      <div
+        className={`confirm-modal panel confirm-modal-${dialog.tone || "danger"}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
+        aria-describedby="confirm-modal-description"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="confirm-modal-head">
+          <span className="confirm-modal-icon">
+            <Icon size={20} />
+          </span>
+          <button
+            className="icon-btn"
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            aria-label="Close confirmation modal"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="confirm-modal-copy">
+          <p className="eyebrow">{dialog.eyebrow || "Confirmation required"}</p>
+          <h2 id="confirm-modal-title">{dialog.title}</h2>
+          <p id="confirm-modal-description">{dialog.description}</p>
+          {dialog.note ? <p className="confirm-modal-note">{dialog.note}</p> : null}
+        </div>
+
+        <div className="confirm-modal-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            {dialog.cancelLabel || "Cancel"}
+          </button>
+          <button
+            className={dialog.tone === "danger" ? "danger-button" : "primary-button"}
+            type="button"
+            onClick={onConfirm}
+            disabled={submitting}
+          >
+            {submitting ? dialog.pendingLabel || "Processing..." : dialog.confirmLabel || "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AuthScreen() {
   const { login, register } = useAuth();
   const { theme, setTheme } = useTheme(null);
@@ -434,6 +496,8 @@ function Dashboard() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [confirmingAction, setConfirmingAction] = useState(false);
   const loadIdRef = useRef(0);
 
   function pushFlash(type, message) {
@@ -443,6 +507,33 @@ function Dashboard() {
   function clearMessages() {
     setError("");
     setFlash(null);
+  }
+
+  function openConfirmDialog(dialog) {
+    setConfirmDialog(dialog);
+  }
+
+  function closeConfirmDialog() {
+    if (confirmingAction) {
+      return;
+    }
+
+    setConfirmDialog(null);
+  }
+
+  async function handleConfirmDialog() {
+    if (!confirmDialog?.onConfirm) {
+      return;
+    }
+
+    setConfirmingAction(true);
+
+    try {
+      await confirmDialog.onConfirm();
+      setConfirmDialog(null);
+    } finally {
+      setConfirmingAction(false);
+    }
   }
 
   async function loadMeta() {
@@ -554,6 +645,28 @@ function Dashboard() {
 
     return () => window.clearTimeout(timeout);
   }, [flash]);
+
+  useEffect(() => {
+    if (!confirmDialog) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && !confirmingAction) {
+        setConfirmDialog(null);
+      }
+    }
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [confirmDialog, confirmingAction]);
 
   const monthLabel = formatMonthLabel(selectedMonth);
   const statusMeta = getStatusMeta(dashboard);
@@ -729,25 +842,33 @@ function Dashboard() {
   async function handleDeleteTransaction(id) {
     clearMessages();
 
-    if (!window.confirm("Delete this transaction?")) {
-      return;
-    }
+    openConfirmDialog({
+      eyebrow: "Delete transaction",
+      title: "Remove this transaction?",
+      description: "This entry will be removed from the current month summary and transaction history.",
+      note: "This action cannot be undone.",
+      confirmLabel: "Delete transaction",
+      pendingLabel: "Deleting...",
+      tone: "danger",
+      icon: Trash2,
+      onConfirm: async () => {
+        try {
+          await api.deleteTransaction(id);
 
-    try {
-      await api.deleteTransaction(id);
+          if (transactionForm.id === id) {
+            resetTransactionForm();
+          }
 
-      if (transactionForm.id === id) {
-        resetTransactionForm();
-      }
-
-      await Promise.all([
-        loadWorkspaceData(selectedMonth),
-        loadFilteredTransactions(selectedMonth, filters),
-      ]);
-      pushFlash("success", "Transaction deleted.");
-    } catch (deleteError) {
-      setError(deleteError.message);
-    }
+          await Promise.all([
+            loadWorkspaceData(selectedMonth),
+            loadFilteredTransactions(selectedMonth, filters),
+          ]);
+          pushFlash("success", "Transaction deleted.");
+        } catch (deleteError) {
+          setError(deleteError.message);
+        }
+      },
+    });
   }
 
   async function handleRecurringSubmit(event) {
@@ -804,25 +925,33 @@ function Dashboard() {
   async function handleDeleteRecurring(id) {
     clearMessages();
 
-    if (!window.confirm("Delete this recurring template? Future generated entries will disappear.")) {
-      return;
-    }
-
-    try {
-      await api.deleteRecurringTemplate(id);
-      if (recurringForm.id === id) {
-        resetRecurringForm();
-      }
-      await Promise.all([
-        loadRecurringTemplates(),
-        loadWorkspaceData(selectedMonth),
-        loadFilteredTransactions(selectedMonth, filters),
-        loadSettingsData(),
-      ]);
-      pushFlash("success", "Recurring template deleted.");
-    } catch (deleteError) {
-      setError(deleteError.message);
-    }
+    openConfirmDialog({
+      eyebrow: "Delete recurring template",
+      title: "Delete this recurring template?",
+      description: "Future generated monthly entries from this template will stop appearing in your workspace.",
+      note: "Previously saved manual transactions will stay untouched.",
+      confirmLabel: "Delete template",
+      pendingLabel: "Deleting...",
+      tone: "danger",
+      icon: Repeat,
+      onConfirm: async () => {
+        try {
+          await api.deleteRecurringTemplate(id);
+          if (recurringForm.id === id) {
+            resetRecurringForm();
+          }
+          await Promise.all([
+            loadRecurringTemplates(),
+            loadWorkspaceData(selectedMonth),
+            loadFilteredTransactions(selectedMonth, filters),
+            loadSettingsData(),
+          ]);
+          pushFlash("success", "Recurring template deleted.");
+        } catch (deleteError) {
+          setError(deleteError.message);
+        }
+      },
+    });
   }
 
   async function handleProfileSubmit(event) {
@@ -937,26 +1066,41 @@ function Dashboard() {
   async function handleClearData() {
     clearMessages();
 
-    if (!window.confirm("Clear all of your transactions, budgets, and recurring templates?")) {
-      return;
-    }
-
-    try {
-      await api.clearData();
-      resetTransactionForm();
-      resetRecurringForm();
-      await reloadAfterMutation("All finance data cleared.");
-    } catch (clearError) {
-      setError(clearError.message);
-    }
+    openConfirmDialog({
+      eyebrow: "Clear finance data",
+      title: "Clear all tracked finance data?",
+      description: "This will remove all saved transactions, monthly budgets, and recurring templates from your account.",
+      note: "Your account profile, password, and display preferences will remain.",
+      confirmLabel: "Clear all data",
+      pendingLabel: "Clearing...",
+      tone: "danger",
+      icon: AlertCircle,
+      onConfirm: async () => {
+        try {
+          await api.clearData();
+          resetTransactionForm();
+          resetRecurringForm();
+          await reloadAfterMutation("All finance data cleared.");
+        } catch (clearError) {
+          setError(clearError.message);
+        }
+      },
+    });
   }
 
   function handleLogout() {
-    if (!window.confirm("Log out of PesoTrace?")) {
-      return;
-    }
-
-    logout();
+    openConfirmDialog({
+      eyebrow: "End session",
+      title: "Log out of PesoTrace?",
+      description: "You will be signed out of this workspace and will need to log in again to continue.",
+      confirmLabel: "Log out",
+      pendingLabel: "Logging out...",
+      tone: "accent",
+      icon: LogOut,
+      onConfirm: async () => {
+        logout();
+      },
+    });
   }
 
   const metricCards = [
@@ -2170,6 +2314,13 @@ function Dashboard() {
           {activeView === "settings" ? renderSettingsView() : null}
         </>
       )}
+
+      <ConfirmationModal
+        dialog={confirmDialog}
+        submitting={confirmingAction}
+        onCancel={closeConfirmDialog}
+        onConfirm={handleConfirmDialog}
+      />
     </main>
   );
 }

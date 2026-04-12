@@ -14,14 +14,14 @@ Future improvements from the document were intentionally excluded.
 
 - Frontend: React + Vite
 - Backend: Node.js + Express
-- Persistence: local JSON datastore for a self-contained demo setup
+- Persistence: MySQL
 - Auth: JWT + bcrypt password hashing
 
 ## Project Structure
 
 ```text
 client/   React user interface
-server/   Express API and persistent data storage
+server/   Express API, MySQL schema, and migration scripts
 ```
 
 ## Run Locally
@@ -53,11 +53,35 @@ server/   Express API and persistent data storage
 
 The API runs on `http://localhost:5000`.
 
+## MySQL Setup
+
+1. Create the database schema:
+
+   ```bash
+   mysql -u root -p < server/sql/schema.sql
+   ```
+
+2. Configure the server connection in `server/.env`:
+
+   ```text
+   MYSQL_HOST=127.0.0.1
+   MYSQL_PORT=3306
+   MYSQL_USER=root
+   MYSQL_PASSWORD=change-me
+   MYSQL_DATABASE=pesotrace
+   ```
+
+3. If you want to move the existing JSON demo data into MySQL, run:
+
+   ```bash
+   npm run db:import-json --workspace server
+   ```
+
 ## Notes
 
 - The documentation suggested React and Node.js, which this implementation follows.
-- The documentation listed MySQL, MongoDB, or PostgreSQL as suggested databases. For this local classroom build, persistence is implemented with a JSON datastore so the project can run immediately without external database setup.
-- Transactions are expense-only because income tracking was listed under future improvements and was intentionally left out.
+- The server keeps the same REST endpoints and JSON response shapes after the MySQL migration, so the React client does not need API changes.
+- The database schema is defined in [server/sql/schema.sql](./server/sql/schema.sql).
 
 ACCOUNT:
 - Name:OjayAca                                                                                    

@@ -43,11 +43,11 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function getAuthenticatedUser(store, userId) {
-  return store.data.users.find((entry) => entry.id === userId) || null;
+function isDuplicateEntryError(error) {
+  return error?.code === "ER_DUP_ENTRY";
 }
 
-function updateUserPreferences(user, payload = {}) {
+function buildUserPreferences(user, payload = {}) {
   const current = getUserPreferences(user);
   const nextTheme =
     payload.preferredTheme === undefined
@@ -66,7 +66,7 @@ function updateUserPreferences(user, payload = {}) {
           allowEmpty: true,
         });
 
-  user.preferences = {
+  return {
     preferredTheme: nextTheme,
     defaultBudget: nextBudget,
     currency: "PHP",
@@ -118,17 +118,36 @@ function getRecurringTemplatePayload(body) {
   };
 }
 
-export function createApp({
-  store,
-  persistStore,
-  clientOrigin = "http://localhost:5173",
-} = {}) {
-  if (!store?.data) {
-    throw new Error("A store with a data object is required.");
+export function createApp({ store, clientOrigin = "http://localhost:5173" } = {}) {
+  if (!store) {
+    throw new Error("A store is required.");
   }
 
-  if (typeof persistStore !== "function") {
-    throw new Error("persistStore must be a function.");
+  const requiredMethods = [
+    "getSnapshot",
+    "getUserById",
+    "getUserByEmail",
+    "createUser",
+    "updateUserProfile",
+    "updateUserPreferences",
+    "updateUserPassword",
+    "createTransaction",
+    "findTransaction",
+    "updateTransaction",
+    "deleteTransaction",
+    "upsertBudget",
+    "getUserStats",
+    "clearUserData",
+    "createRecurringTemplate",
+    "findRecurringTemplate",
+    "updateRecurringTemplate",
+    "deleteRecurringTemplate",
+  ];
+
+  for (const methodName of requiredMethods) {
+    if (typeof store[methodName] !== "function") {
+      throw new Error(`Store method ${methodName} is required.`);
+    }
   }
 
   const app = express();
@@ -169,14 +188,14 @@ export function createApp({
         return res.status(400).json({ message: "Password must be at least 6 characters." });
       }
 
-      const existingUser = store.data.users.find((user) => user.email === email);
+      const existingUser = await store.getUserByEmail(email);
 
       if (existingUser) {
         return res.status(409).json({ message: "That email is already registered." });
       }
 
       const now = new Date().toISOString();
-      const user = {
+      const user = await store.createUser({
         id: crypto.randomUUID(),
         name,
         email,
@@ -187,17 +206,18 @@ export function createApp({
           defaultBudget: null,
           currency: "PHP",
         },
-      };
-
-      store.data.users.push(user);
-      await persistStore();
+      });
 
       const publicUser = sanitizeUser(user);
       return res.status(201).json({
         user: publicUser,
         token: createToken(publicUser),
       });
-    } catch {
+    } catch (error) {
+      if (isDuplicateEntryError(error)) {
+        return res.status(409).json({ message: "That email is already registered." });
+      }
+
       return res.status(500).json({ message: "Failed to register account." });
     }
   });
@@ -211,7 +231,7 @@ export function createApp({
         return res.status(400).json({ message: "Email and password are required." });
       }
 
-      const user = store.data.users.find((entry) => entry.email === email);
+      const user = await store.getUserByEmail(email);
 
       if (!user) {
         return res.status(401).json({ message: "Invalid email or password." });
@@ -233,8 +253,8 @@ export function createApp({
     }
   });
 
-  app.get("/api/auth/me", requireAuth, (req, res) => {
-    const user = getAuthenticatedUser(store, req.auth.userId);
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    const user = await store.getUserById(req.auth.userId);
 
     if (!user) {
       return res.status(404).json({ message: "User account no longer exists." });
@@ -243,31 +263,34 @@ export function createApp({
     return res.json({ user: sanitizeUser(user) });
   });
 
-  app.get("/api/dashboard", requireAuth, (req, res) => {
+  app.get("/api/dashboard", requireAuth, async (req, res) => {
     try {
       const month = normalizeMonth(req.query.month);
-      const summary = getMonthlySummary(req.auth.userId, month, store.data);
+      const snapshot = await store.getSnapshot();
+      const summary = getMonthlySummary(req.auth.userId, month, snapshot);
       return res.json({ summary });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
   });
 
-  app.get("/api/reports", requireAuth, (req, res) => {
+  app.get("/api/reports", requireAuth, async (req, res) => {
     try {
       const month = normalizeMonth(req.query.month);
       const months = Number(req.query.months || 6);
-      const report = getReports(req.auth.userId, month, store.data, months);
+      const snapshot = await store.getSnapshot();
+      const report = getReports(req.auth.userId, month, snapshot, months);
       return res.json(report);
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
   });
 
-  app.get("/api/transactions", requireAuth, (req, res) => {
+  app.get("/api/transactions", requireAuth, async (req, res) => {
     try {
       const month = req.query.month ? normalizeMonth(req.query.month) : "";
       const includeRecurring = req.query.includeRecurring !== "false";
+      const snapshot = await store.getSnapshot();
       const transactions = getUserTransactions(
         req.auth.userId,
         {
@@ -277,7 +300,7 @@ export function createApp({
           query: req.query.query || "",
           includeRecurring,
         },
-        store.data,
+        snapshot,
       );
 
       return res.json({ transactions });
@@ -290,16 +313,13 @@ export function createApp({
     try {
       const payload = getTransactionPayload(req.body);
       const now = new Date().toISOString();
-      const transaction = {
+      const transaction = await store.createTransaction({
         id: crypto.randomUUID(),
         userId: req.auth.userId,
         ...payload,
         createdAt: now,
         updatedAt: now,
-      };
-
-      store.data.transactions.push(transaction);
-      await persistStore();
+      });
 
       return res.status(201).json({ transaction });
     } catch (error) {
@@ -309,19 +329,17 @@ export function createApp({
 
   app.put("/api/transactions/:id", requireAuth, async (req, res) => {
     try {
-      const transaction = store.data.transactions.find(
-        (entry) => entry.id === req.params.id && entry.userId === req.auth.userId,
-      );
+      const existingTransaction = await store.findTransaction(req.auth.userId, req.params.id);
 
-      if (!transaction) {
+      if (!existingTransaction) {
         return res.status(404).json({ message: "Transaction not found." });
       }
 
-      Object.assign(transaction, getTransactionPayload(req.body), {
+      const transaction = await store.updateTransaction(req.auth.userId, req.params.id, {
+        ...existingTransaction,
+        ...getTransactionPayload(req.body),
         updatedAt: new Date().toISOString(),
       });
-
-      await persistStore();
 
       return res.json({ transaction });
     } catch (error) {
@@ -330,16 +348,11 @@ export function createApp({
   });
 
   app.delete("/api/transactions/:id", requireAuth, async (req, res) => {
-    const index = store.data.transactions.findIndex(
-      (entry) => entry.id === req.params.id && entry.userId === req.auth.userId,
-    );
+    const deleted = await store.deleteTransaction(req.auth.userId, req.params.id);
 
-    if (index === -1) {
+    if (!deleted) {
       return res.status(404).json({ message: "Transaction not found." });
     }
-
-    store.data.transactions.splice(index, 1);
-    await persistStore();
 
     return res.json({ success: true });
   });
@@ -348,37 +361,31 @@ export function createApp({
     try {
       const month = normalizeMonth(req.params.month);
       const amount = toAmount(req.body.amount, "Budget", { allowZero: true });
-      const existingBudget = store.data.budgets.find(
-        (entry) => entry.userId === req.auth.userId && entry.month === month,
-      );
       const now = new Date().toISOString();
 
-      if (existingBudget) {
-        existingBudget.amount = amount;
-        existingBudget.updatedAt = now;
-      } else {
-        store.data.budgets.push({
-          id: crypto.randomUUID(),
-          userId: req.auth.userId,
-          month,
-          amount,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+      await store.upsertBudget({
+        id: crypto.randomUUID(),
+        userId: req.auth.userId,
+        month,
+        amount,
+        createdAt: now,
+        updatedAt: now,
+      });
 
-      await persistStore();
-
+      const snapshot = await store.getSnapshot();
       return res.json({
-        summary: getMonthlySummary(req.auth.userId, month, store.data),
+        summary: getMonthlySummary(req.auth.userId, month, snapshot),
       });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
   });
 
-  app.get("/api/settings", requireAuth, (req, res) => {
-    const user = getAuthenticatedUser(store, req.auth.userId);
+  app.get("/api/settings", requireAuth, async (req, res) => {
+    const [user, stats] = await Promise.all([
+      store.getUserById(req.auth.userId),
+      store.getUserStats(req.auth.userId),
+    ]);
 
     if (!user) {
       return res.status(404).json({ message: "User account no longer exists." });
@@ -386,23 +393,13 @@ export function createApp({
 
     return res.json({
       user: sanitizeUser(user),
-      stats: {
-        transactionCount: store.data.transactions.filter(
-          (entry) => entry.userId === req.auth.userId,
-        ).length,
-        budgetCount: store.data.budgets.filter(
-          (entry) => entry.userId === req.auth.userId,
-        ).length,
-        recurringCount: store.data.recurringTemplates.filter(
-          (entry) => entry.userId === req.auth.userId,
-        ).length,
-      },
+      stats,
     });
   });
 
   app.put("/api/settings/profile", requireAuth, async (req, res) => {
     try {
-      const user = getAuthenticatedUser(store, req.auth.userId);
+      const user = await store.getUserById(req.auth.userId);
 
       if (!user) {
         return res.status(404).json({ message: "User account no longer exists." });
@@ -419,36 +416,41 @@ export function createApp({
         return res.status(400).json({ message: "Email must be a valid email address." });
       }
 
-      const existingUser = store.data.users.find(
-        (entry) => entry.email === email && entry.id !== req.auth.userId,
-      );
+      const existingUser = await store.getUserByEmail(email);
 
-      if (existingUser) {
+      if (existingUser && existingUser.id !== req.auth.userId) {
         return res.status(409).json({ message: "That email is already registered." });
       }
 
-      user.name = name;
-      user.email = email;
-      await persistStore();
+      const updatedUser = await store.updateUserProfile(req.auth.userId, {
+        name,
+        email,
+      });
 
-      return res.json({ user: sanitizeUser(user) });
+      return res.json({ user: sanitizeUser(updatedUser) });
     } catch (error) {
+      if (isDuplicateEntryError(error)) {
+        return res.status(409).json({ message: "That email is already registered." });
+      }
+
       return res.status(400).json({ message: error.message });
     }
   });
 
   app.put("/api/settings/preferences", requireAuth, async (req, res) => {
     try {
-      const user = getAuthenticatedUser(store, req.auth.userId);
+      const user = await store.getUserById(req.auth.userId);
 
       if (!user) {
         return res.status(404).json({ message: "User account no longer exists." });
       }
 
-      updateUserPreferences(user, req.body);
-      await persistStore();
+      const updatedUser = await store.updateUserPreferences(
+        req.auth.userId,
+        buildUserPreferences(user, req.body),
+      );
 
-      return res.json({ user: sanitizeUser(user) });
+      return res.json({ user: sanitizeUser(updatedUser) });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -456,7 +458,7 @@ export function createApp({
 
   app.put("/api/settings/password", requireAuth, async (req, res) => {
     try {
-      const user = getAuthenticatedUser(store, req.auth.userId);
+      const user = await store.getUserById(req.auth.userId);
 
       if (!user) {
         return res.status(404).json({ message: "User account no longer exists." });
@@ -479,8 +481,7 @@ export function createApp({
         return res.status(401).json({ message: "Current password is incorrect." });
       }
 
-      user.passwordHash = await bcrypt.hash(newPassword, 10);
-      await persistStore();
+      await store.updateUserPassword(req.auth.userId, await bcrypt.hash(newPassword, 10));
 
       return res.json({ success: true });
     } catch (error) {
@@ -488,8 +489,11 @@ export function createApp({
     }
   });
 
-  app.get("/api/settings/export", requireAuth, (req, res) => {
-    const user = getAuthenticatedUser(store, req.auth.userId);
+  app.get("/api/settings/export", requireAuth, async (req, res) => {
+    const [user, snapshot] = await Promise.all([
+      store.getUserById(req.auth.userId),
+      store.getSnapshot(),
+    ]);
 
     if (!user) {
       return res.status(404).json({ message: "User account no longer exists." });
@@ -498,48 +502,34 @@ export function createApp({
     return res.json({
       exportedAt: new Date().toISOString(),
       user: sanitizeUser(user),
-      budgets: store.data.budgets.filter((entry) => entry.userId === req.auth.userId),
-      transactions: store.data.transactions.filter(
-        (entry) => entry.userId === req.auth.userId,
-      ),
-      recurringTemplates: getRecurringTemplates(req.auth.userId, store.data),
+      budgets: snapshot.budgets.filter((entry) => entry.userId === req.auth.userId),
+      transactions: snapshot.transactions.filter((entry) => entry.userId === req.auth.userId),
+      recurringTemplates: getRecurringTemplates(req.auth.userId, snapshot),
     });
   });
 
-  app.delete("/api/settings/data", requireAuth, async (req, res) => {
-    store.data.transactions = store.data.transactions.filter(
-      (entry) => entry.userId !== req.auth.userId,
-    );
-    store.data.budgets = store.data.budgets.filter(
-      (entry) => entry.userId !== req.auth.userId,
-    );
-    store.data.recurringTemplates = store.data.recurringTemplates.filter(
-      (entry) => entry.userId !== req.auth.userId,
-    );
-    await persistStore();
-
+  app.delete("/api/settings/data", requireAuth, async (_req, res) => {
+    await store.clearUserData(_req.auth.userId);
     return res.json({ success: true });
   });
 
-  app.get("/api/recurring-templates", requireAuth, (req, res) => {
+  app.get("/api/recurring-templates", requireAuth, async (req, res) => {
+    const snapshot = await store.getSnapshot();
     return res.json({
-      templates: getRecurringTemplates(req.auth.userId, store.data),
+      templates: getRecurringTemplates(req.auth.userId, snapshot),
     });
   });
 
   app.post("/api/recurring-templates", requireAuth, async (req, res) => {
     try {
       const now = new Date().toISOString();
-      const template = {
+      const template = await store.createRecurringTemplate({
         id: crypto.randomUUID(),
         userId: req.auth.userId,
         ...getRecurringTemplatePayload(req.body),
         createdAt: now,
         updatedAt: now,
-      };
-
-      store.data.recurringTemplates.push(template);
-      await persistStore();
+      });
 
       return res.status(201).json({ template });
     } catch (error) {
@@ -549,18 +539,17 @@ export function createApp({
 
   app.put("/api/recurring-templates/:id", requireAuth, async (req, res) => {
     try {
-      const template = store.data.recurringTemplates.find(
-        (entry) => entry.id === req.params.id && entry.userId === req.auth.userId,
-      );
+      const existingTemplate = await store.findRecurringTemplate(req.auth.userId, req.params.id);
 
-      if (!template) {
+      if (!existingTemplate) {
         return res.status(404).json({ message: "Recurring template not found." });
       }
 
-      Object.assign(template, getRecurringTemplatePayload(req.body), {
+      const template = await store.updateRecurringTemplate(req.auth.userId, req.params.id, {
+        ...existingTemplate,
+        ...getRecurringTemplatePayload(req.body),
         updatedAt: new Date().toISOString(),
       });
-      await persistStore();
 
       return res.json({ template });
     } catch (error) {
@@ -569,16 +558,11 @@ export function createApp({
   });
 
   app.delete("/api/recurring-templates/:id", requireAuth, async (req, res) => {
-    const index = store.data.recurringTemplates.findIndex(
-      (entry) => entry.id === req.params.id && entry.userId === req.auth.userId,
-    );
+    const deleted = await store.deleteRecurringTemplate(req.auth.userId, req.params.id);
 
-    if (index === -1) {
+    if (!deleted) {
       return res.status(404).json({ message: "Recurring template not found." });
     }
-
-    store.data.recurringTemplates.splice(index, 1);
-    await persistStore();
 
     return res.json({ success: true });
   });

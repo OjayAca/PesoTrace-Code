@@ -1,4 +1,9 @@
-import { db } from "./store.js";
+const EMPTY_STORE_DATA = {
+  users: [],
+  transactions: [],
+  budgets: [],
+  recurringTemplates: [],
+};
 
 export const DEFAULT_CATEGORIES = [
   "Food",
@@ -63,7 +68,7 @@ function resolveOccurrenceDate(startDate, month) {
   return `${month}-${safeDay}`;
 }
 
-function buildRecurringTransactions(userId, month, storeData = db.data) {
+function buildRecurringTransactions(userId, month, storeData = EMPTY_STORE_DATA) {
   if (!month) {
     return [];
   }
@@ -124,7 +129,7 @@ function applyTransactionFilters(items, { type = "", category = "", query = "" }
   });
 }
 
-function getBudgetAmount(userId, month, storeData = db.data) {
+function getBudgetAmount(userId, month, storeData = EMPTY_STORE_DATA) {
   const budgetRecord =
     storeData.budgets.find(
       (budget) => budget.userId === userId && budget.month === month,
@@ -221,7 +226,7 @@ export function sortTransactionsDesc(items) {
   });
 }
 
-export function getUserTransactions(userId, filters = {}, storeData = db.data) {
+export function getUserTransactions(userId, filters = {}, storeData = EMPTY_STORE_DATA) {
   const month = filters.month ? normalizeMonth(filters.month) : "";
   const includeRecurring = filters.includeRecurring !== false;
   const baseTransactions = storeData.transactions
@@ -242,7 +247,7 @@ export function getUserTransactions(userId, filters = {}, storeData = db.data) {
   );
 }
 
-export function getMonthlySummary(userId, month, storeData = db.data) {
+export function getMonthlySummary(userId, month, storeData = EMPTY_STORE_DATA) {
   const normalizedMonth = normalizeMonth(month);
   const transactions = getUserTransactions(
     userId,
@@ -302,7 +307,7 @@ export function getMonthlySummary(userId, month, storeData = db.data) {
   return summary;
 }
 
-export function getRecurringTemplates(userId, storeData = db.data) {
+export function getRecurringTemplates(userId, storeData = EMPTY_STORE_DATA) {
   return [...storeData.recurringTemplates]
     .filter((template) => template.userId === userId)
     .map((template) => ({
@@ -314,7 +319,7 @@ export function getRecurringTemplates(userId, storeData = db.data) {
     .sort((left, right) => left.startDate.localeCompare(right.startDate));
 }
 
-export function getReports(userId, month, storeData = db.data, months = 6) {
+export function getReports(userId, month, storeData = EMPTY_STORE_DATA, months = 6) {
   const normalizedMonth = normalizeMonth(month);
   const safeMonths = Math.max(3, Math.min(Number(months) || 6, 12));
   const selectedTransactions = getUserTransactions(

@@ -3,6 +3,7 @@ import test from "node:test";
 import bcrypt from "bcryptjs";
 import { createToken } from "./auth.js";
 import { createApp } from "./app.js";
+import { createMemoryStore } from "./store.js";
 
 function closeServer(server) {
   return new Promise((resolve, reject) => {
@@ -18,18 +19,10 @@ function closeServer(server) {
 }
 
 async function startTestApp(seedData = {}) {
-  const store = {
-    data: {
-      users: seedData.users ? [...seedData.users] : [],
-      transactions: seedData.transactions ? [...seedData.transactions] : [],
-      budgets: seedData.budgets ? [...seedData.budgets] : [],
-      recurringTemplates: seedData.recurringTemplates ? [...seedData.recurringTemplates] : [],
-    },
-  };
+  const store = createMemoryStore(seedData);
 
   const app = createApp({
     store,
-    persistStore: async () => {},
     clientOrigin: "http://localhost:5173",
   });
 
@@ -63,9 +56,10 @@ test("register creates a user, returns a token, and omits passwordHash", async (
   });
 
   assert.equal(response.status, 201);
-  assert.equal(store.data.users.length, 1);
-  assert.equal(store.data.users[0].email, "tester@example.com");
-  assert.ok(store.data.users[0].passwordHash);
+  const snapshot = await store.getSnapshot();
+  assert.equal(snapshot.users.length, 1);
+  assert.equal(snapshot.users[0].email, "tester@example.com");
+  assert.ok(snapshot.users[0].passwordHash);
   assert.equal(data.user.email, "tester@example.com");
   assert.equal("passwordHash" in data.user, false);
   assert.ok(data.token);
@@ -388,8 +382,9 @@ test("settings preferences and password updates work for the authenticated user"
   });
 
   assert.equal(preferencesResponse.response.status, 200);
-  assert.equal(store.data.users[0].preferences.preferredTheme, "dark");
-  assert.equal(store.data.users[0].preferences.defaultBudget, 1750);
+  let snapshot = await store.getSnapshot();
+  assert.equal(snapshot.users[0].preferences.preferredTheme, "dark");
+  assert.equal(snapshot.users[0].preferences.defaultBudget, 1750);
 
   const passwordResponse = await request("/api/settings/password", {
     method: "PUT",
@@ -404,7 +399,8 @@ test("settings preferences and password updates work for the authenticated user"
   });
 
   assert.equal(passwordResponse.response.status, 200);
-  assert.equal(await bcrypt.compare("newsecret456", store.data.users[0].passwordHash), true);
+  snapshot = await store.getSnapshot();
+  assert.equal(await bcrypt.compare("newsecret456", snapshot.users[0].passwordHash), true);
 });
 
 test("recurring templates are returned in reports and can be exported", async (t) => {
@@ -457,4 +453,56 @@ test("recurring templates are returned in reports and can be exported", async (t
   assert.equal(reportsResponse.data.categoryBreakdown[0].category, "Bills");
   assert.equal(exportResponse.response.status, 200);
   assert.equal(exportResponse.data.recurringTemplates.length, 1);
+});
+
+test("recurring templates can be deleted without crashing the API", async (t) => {
+  const user = {
+    id: "user-1",
+    name: "Recurring Delete User",
+    email: "recurring-delete@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "light",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    recurringTemplates: [
+      {
+        id: "rec-1",
+        userId: "user-1",
+        title: "Gym membership",
+        amount: 1200,
+        type: "expense",
+        category: "Health",
+        notes: "",
+        startDate: "2026-03-01",
+        repeat: "monthly",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const deleteResponse = await request("/api/recurring-templates/rec-1", {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const listResponse = await request("/api/recurring-templates", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(deleteResponse.response.status, 200);
+  assert.equal(deleteResponse.data.success, true);
+  assert.equal(listResponse.response.status, 200);
+  assert.equal(listResponse.data.templates.length, 0);
 });

@@ -1,14 +1,14 @@
 import dotenv from "dotenv";
-import { db, initStore, persist } from "./store.js";
+import { createStoreFromEnv } from "./store.js";
 import { createApp } from "./app.js";
 
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const store = createStoreFromEnv(process.env);
 const app = createApp({
-  store: db,
-  persistStore: persist,
+  store,
   clientOrigin: CLIENT_ORIGIN,
 });
 
@@ -30,7 +30,7 @@ function listen(port) {
 }
 
 export async function startServer() {
-  await initStore();
+  await store.init();
   return listen(PORT);
 }
 

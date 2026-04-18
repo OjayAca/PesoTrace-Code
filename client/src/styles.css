@@ -352,6 +352,29 @@ textarea { resize: vertical; }
   font-size: 0.95rem;
 }
 
+.auth-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.text-button {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.text-button:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 /* Mode Toggle Tabs */
 .mode-toggle {
   display: grid;

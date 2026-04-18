@@ -194,6 +194,251 @@ function AppShell() {
   return user ? <Dashboard /> : <AuthScreen />;
 }
 
+function AuthHero() {
+  return (
+    <section className="auth-showcase">
+      <div className="hero-copy">
+        <div className="brand-mark">PT</div>
+        <p className="eyebrow">
+          <Wallet size={14} /> Personal finance tracker
+        </p>
+        <h1>Track every peso with clearer monthly control.</h1>
+        <p className="hero-text">
+          PesoTrace combines budgeting, transactions, recurring entries, reports,
+          and account settings in one focused workspace.
+        </p>
+      </div>
+
+      <div className="showcase-grid">
+        <article className="showcase-card showcase-card-featured">
+          <p className="card-kicker">Upgraded workspace</p>
+          <h2>Dashboard, transactions, reports, and settings.</h2>
+          <p>
+            Keep monthly budgets, cash flow, categories, and recurring entries in
+            one application instead of scattered notes.
+          </p>
+        </article>
+
+        <article className="showcase-card">
+          <BarChart3 size={20} />
+          <h3>Readable reports</h3>
+          <p>See category totals and month-to-month patterns without extra tools.</p>
+        </article>
+
+        <article className="showcase-card">
+          <Repeat size={20} />
+          <h3>Recurring tracking</h3>
+          <p>Reuse monthly allowance or bill entries instead of typing them again.</p>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function LoginScreen({ theme, setTheme, submitting, error, form, setForm, onSubmit, onSwitch }) {
+  return (
+    <section className="panel auth-panel auth-panel-login">
+      <div className="auth-panel-top">
+        <div>
+          <p className="eyebrow">Welcome back</p>
+          <h2>Sign in to PesoTrace</h2>
+          <p className="auth-helper">
+            Continue managing your monthly finances and recent activity.
+          </p>
+        </div>
+
+        <button
+          className="theme-toggle"
+          type="button"
+          onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          aria-label="Toggle theme"
+        >
+          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+        </button>
+      </div>
+
+      <form className="auth-form" onSubmit={onSubmit}>
+        <label>
+          <div className="field-label">
+            <span>Email</span>
+            <small>Used for sign in.</small>
+          </div>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, email: event.target.value }))
+            }
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+          />
+        </label>
+
+        <label>
+          <div className="field-label">
+            <span>Password</span>
+            <small>Enter your current password.</small>
+          </div>
+          <input
+            type="password"
+            value={form.password}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, password: event.target.value }))
+            }
+            placeholder="Your password"
+            autoComplete="current-password"
+            required
+          />
+        </label>
+
+        {error ? (
+          <p className="form-error" role="alert">
+            <AlertCircle size={15} /> {error}
+          </p>
+        ) : null}
+
+        <button className="primary-button" type="submit" disabled={submitting}>
+          {submitting ? "Please wait..." : "Sign in"}
+        </button>
+      </form>
+
+      <p className="auth-switch">
+        New here?
+        <button type="button" className="text-button" onClick={onSwitch}>
+          Create an account
+        </button>
+      </p>
+    </section>
+  );
+}
+
+function RegisterScreen({
+  theme,
+  setTheme,
+  submitting,
+  error,
+  form,
+  setForm,
+  onSubmit,
+  onSwitch,
+}) {
+  return (
+    <section className="panel auth-panel auth-panel-register">
+      <div className="auth-panel-top">
+        <div>
+          <p className="eyebrow">Create account</p>
+          <h2>Register for PesoTrace</h2>
+          <p className="auth-helper">
+            Set up your workspace and start tracking your finances in one place.
+          </p>
+        </div>
+
+        <button
+          className="theme-toggle"
+          type="button"
+          onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          aria-label="Toggle theme"
+        >
+          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+        </button>
+      </div>
+
+      <form className="auth-form" onSubmit={onSubmit}>
+        <label>
+          <div className="field-label">
+            <span>Full name</span>
+            <small>Shown across your workspace.</small>
+          </div>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, name: event.target.value }))
+            }
+            placeholder="Juan Dela Cruz"
+            autoComplete="name"
+            required
+          />
+        </label>
+
+        <label>
+          <div className="field-label">
+            <span>Email</span>
+            <small>Used for sign in.</small>
+          </div>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, email: event.target.value }))
+            }
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+          />
+        </label>
+
+        <label>
+          <div className="field-label">
+            <span>Password</span>
+            <small>Minimum of 6 characters.</small>
+          </div>
+          <input
+            type="password"
+            value={form.password}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, password: event.target.value }))
+            }
+            minLength={6}
+            placeholder="At least 6 characters"
+            autoComplete="new-password"
+            required
+          />
+        </label>
+
+        <label>
+          <div className="field-label">
+            <span>Confirm password</span>
+            <small>Must match your password.</small>
+          </div>
+          <input
+            type="password"
+            value={form.confirmPassword}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                confirmPassword: event.target.value,
+              }))
+            }
+            minLength={6}
+            placeholder="Re-enter your password"
+            autoComplete="new-password"
+            required
+          />
+        </label>
+
+        {error ? (
+          <p className="form-error" role="alert">
+            <AlertCircle size={15} /> {error}
+          </p>
+        ) : null}
+
+        <button className="primary-button" type="submit" disabled={submitting}>
+          {submitting ? "Please wait..." : "Create account"}
+        </button>
+      </form>
+
+      <p className="auth-switch">
+        Already have an account?
+        <button type="button" className="text-button" onClick={onSwitch}>
+          Sign in
+        </button>
+      </p>
+    </section>
+  );
+}
+
 function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
   if (!dialog) {
     return null;
@@ -259,209 +504,99 @@ function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
 function AuthScreen() {
   const { login, register } = useAuth();
   const { theme, setTheme } = useTheme(null);
-  const [mode, setMode] = useState("login");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
+  const [screen, setScreen] = useState("login");
+  const [loginForm, setLoginForm] = useState({
+    email: "",
+    password: "",
+  });
+  const [registerForm, setRegisterForm] = useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
+  const [loginError, setLoginError] = useState("");
+  const [registerError, setRegisterError] = useState("");
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [registerSubmitting, setRegisterSubmitting] = useState(false);
 
-  async function handleSubmit(event) {
+  function switchToRegister() {
+    setRegisterForm((current) => ({
+      ...current,
+      email: loginForm.email || current.email,
+    }));
+    setRegisterError("");
+    setScreen("register");
+  }
+
+  function switchToLogin() {
+    setLoginForm((current) => ({
+      ...current,
+      email: registerForm.email || current.email,
+    }));
+    setLoginError("");
+    setScreen("login");
+  }
+
+  async function handleLoginSubmit(event) {
     event.preventDefault();
-    setError("");
-    setSubmitting(true);
+    setLoginError("");
+    setLoginSubmitting(true);
 
     try {
-      if (mode === "register") {
-        if (form.password !== form.confirmPassword) {
-          throw new Error("Passwords do not match.");
-        }
-
-        await register(form);
-      } else {
-        await login({
-          email: form.email,
-          password: form.password,
-        });
-      }
+      await login(loginForm);
     } catch (submitError) {
-      setError(submitError.message);
+      setLoginError(submitError.message);
     } finally {
-      setSubmitting(false);
+      setLoginSubmitting(false);
+    }
+  }
+
+  async function handleRegisterSubmit(event) {
+    event.preventDefault();
+    setRegisterError("");
+    setRegisterSubmitting(true);
+
+    try {
+      if (registerForm.password !== registerForm.confirmPassword) {
+        throw new Error("Passwords do not match.");
+      }
+
+      await register(registerForm);
+    } catch (submitError) {
+      setRegisterError(submitError.message);
+    } finally {
+      setRegisterSubmitting(false);
     }
   }
 
   return (
     <main className="app-shell auth-shell">
-      <section className="auth-showcase">
-        <div className="hero-copy">
-          <div className="brand-mark">PT</div>
-          <p className="eyebrow">
-            <Wallet size={14} /> Personal finance tracker
-          </p>
-          <h1>Track every peso with clearer monthly control.</h1>
-          <p className="hero-text">
-            PesoTrace now combines budgeting, typed transactions, recurring
-            entries, reports, and account settings in one focused workspace.
-          </p>
-        </div>
+      <AuthHero />
 
-        <div className="showcase-grid">
-          <article className="showcase-card showcase-card-featured">
-            <p className="card-kicker">Upgraded workspace</p>
-            <h2>Dashboard, transactions, reports, and settings.</h2>
-            <p>
-              Keep monthly budgets, cash flow, categories, and recurring entries
-              in one application instead of scattered notes.
-            </p>
-          </article>
-
-          <article className="showcase-card">
-            <BarChart3 size={20} />
-            <h3>Readable reports</h3>
-            <p>See category totals and month-to-month patterns without extra tools.</p>
-          </article>
-
-          <article className="showcase-card">
-            <Repeat size={20} />
-            <h3>Recurring tracking</h3>
-            <p>Reuse monthly allowance or bill entries instead of typing them again.</p>
-          </article>
-        </div>
-      </section>
-
-      <section className="panel auth-panel">
-        <div className="auth-panel-top">
-          <div>
-            <p className="eyebrow">Welcome</p>
-            <h2>{mode === "register" ? "Create your account" : "Sign in"}</h2>
-            <p className="auth-helper">
-              {mode === "register"
-                ? "Start your upgraded finance workspace."
-                : "Continue managing your monthly finances."}
-            </p>
-          </div>
-
-          <button
-            className="theme-toggle"
-            type="button"
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-            aria-label="Toggle theme"
-          >
-            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-          </button>
-        </div>
-
-        <div className="mode-toggle" role="tablist" aria-label="Authentication mode">
-          <button
-            className={mode === "login" ? "active" : ""}
-            type="button"
-            onClick={() => setMode("login")}
-          >
-            Login
-          </button>
-          <button
-            className={mode === "register" ? "active" : ""}
-            type="button"
-            onClick={() => setMode("register")}
-          >
-            Register
-          </button>
-        </div>
-
-        <form className="auth-form" onSubmit={handleSubmit}>
-          {mode === "register" ? (
-            <label>
-              <div className="field-label">
-                <span>Full name</span>
-                <small>Shown across your workspace.</small>
-              </div>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, name: event.target.value }))
-                }
-                placeholder="Juan Dela Cruz"
-                autoComplete="name"
-                required
-              />
-            </label>
-          ) : null}
-
-          <label>
-            <div className="field-label">
-              <span>Email</span>
-              <small>Used for sign in.</small>
-            </div>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, email: event.target.value }))
-              }
-              placeholder="you@example.com"
-              autoComplete="email"
-              required
-            />
-          </label>
-
-          <label>
-            <div className="field-label">
-              <span>Password</span>
-              <small>Minimum of 6 characters.</small>
-            </div>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, password: event.target.value }))
-              }
-              minLength={6}
-              placeholder="At least 6 characters"
-              autoComplete={mode === "register" ? "new-password" : "current-password"}
-              required
-            />
-          </label>
-
-          {mode === "register" ? (
-            <label>
-              <div className="field-label">
-                <span>Confirm password</span>
-                <small>Must match your password.</small>
-              </div>
-              <input
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, confirmPassword: event.target.value }))
-                }
-                minLength={6}
-                placeholder="Re-enter your password"
-                autoComplete="new-password"
-                required
-              />
-            </label>
-          ) : null}
-
-          {error ? (
-            <p className="form-error">
-              <AlertCircle size={15} /> {error}
-            </p>
-          ) : null}
-
-          <button className="primary-button" type="submit" disabled={submitting}>
-            {submitting
-              ? "Please wait..."
-              : mode === "register"
-                ? "Create account"
-                : "Sign in"}
-          </button>
-        </form>
-      </section>
+      {screen === "login" ? (
+        <LoginScreen
+          theme={theme}
+          setTheme={setTheme}
+          submitting={loginSubmitting}
+          error={loginError}
+          form={loginForm}
+          setForm={setLoginForm}
+          onSubmit={handleLoginSubmit}
+          onSwitch={switchToRegister}
+        />
+      ) : (
+        <RegisterScreen
+          theme={theme}
+          setTheme={setTheme}
+          submitting={registerSubmitting}
+          error={registerError}
+          form={registerForm}
+          setForm={setRegisterForm}
+          onSubmit={handleRegisterSubmit}
+          onSwitch={switchToLogin}
+        />
+      )}
     </main>
   );
 }
@@ -1664,6 +1799,11 @@ function Dashboard() {
                               type="button"
                               onClick={() => handleEditTransaction(transaction)}
                               title={transaction.isRecurring ? "Managed in recurring templates" : "Edit"}
+                              aria-label={
+                                transaction.isRecurring
+                                  ? "Recurring entries are managed in recurring templates"
+                                  : `Edit ${transaction.title}`
+                              }
                             >
                               <Pencil size={14} />
                             </button>
@@ -1673,6 +1813,7 @@ function Dashboard() {
                               onClick={() => handleDeleteTransaction(transaction.id)}
                               title="Delete"
                               disabled={transaction.isRecurring}
+                              aria-label={`Delete ${transaction.title}`}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1712,6 +1853,11 @@ function Dashboard() {
                           className="action-button"
                           type="button"
                           onClick={() => handleEditTransaction(transaction)}
+                          aria-label={
+                            transaction.isRecurring
+                              ? "Recurring entries are managed in recurring templates"
+                              : `Edit ${transaction.title}`
+                          }
                         >
                           <Pencil size={13} /> Edit
                         </button>
@@ -1720,6 +1866,7 @@ function Dashboard() {
                           type="button"
                           onClick={() => handleDeleteTransaction(transaction.id)}
                           disabled={transaction.isRecurring}
+                          aria-label={`Delete ${transaction.title}`}
                         >
                           <Trash2 size={13} /> Delete
                         </button>
@@ -2421,6 +2568,7 @@ function Dashboard() {
             className={`tab-button ${activeView === tab.id ? "active" : ""}`}
             type="button"
             onClick={() => setActiveView(tab.id)}
+            aria-current={activeView === tab.id ? "page" : undefined}
           >
             <tab.icon size={16} /> {tab.label}
           </button>
@@ -2428,13 +2576,13 @@ function Dashboard() {
       </nav>
 
       {flash ? (
-        <p className={`banner banner-${flash.type}`}>
+        <p className={`banner banner-${flash.type}`} role="status" aria-live="polite">
           <CheckCircle2 size={16} /> {flash.message}
         </p>
       ) : null}
 
       {error ? (
-        <p className="banner-error">
+        <p className="banner-error" role="alert">
           <AlertCircle size={16} /> {error}
         </p>
       ) : null}

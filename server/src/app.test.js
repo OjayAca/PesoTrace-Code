@@ -625,6 +625,79 @@ test("transactions support category and type filters", async (t) => {
   assert.equal(filtered.data.transactions[0].title, "Freelance");
 });
 
+test("transactions support date range filtering and amount sorting", async (t) => {
+  const user = {
+    id: "user-range",
+    name: "Range User",
+    email: "range@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "light",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    transactions: [
+      {
+        id: "txn-a",
+        userId: "user-range",
+        title: "Too early",
+        amount: 300,
+        type: "expense",
+        category: "Food",
+        notes: "",
+        transactionDate: "2026-04-05",
+        createdAt: "2026-04-05T00:00:00.000Z",
+        updatedAt: "2026-04-05T00:00:00.000Z",
+      },
+      {
+        id: "txn-b",
+        userId: "user-range",
+        title: "Middle",
+        amount: 100,
+        type: "expense",
+        category: "Food",
+        notes: "",
+        transactionDate: "2026-04-10",
+        createdAt: "2026-04-10T00:00:00.000Z",
+        updatedAt: "2026-04-10T00:00:00.000Z",
+      },
+      {
+        id: "txn-c",
+        userId: "user-range",
+        title: "Late",
+        amount: 200,
+        type: "expense",
+        category: "Food",
+        notes: "",
+        transactionDate: "2026-04-15",
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request(
+    "/api/transactions?month=2026-04&startDate=2026-04-06&endDate=2026-04-15&sortBy=amount&sortOrder=asc",
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    data.transactions.map((transaction) => transaction.title),
+    ["Middle", "Late"],
+  );
+});
+
 test("settings preferences and password updates work for the authenticated user", async (t) => {
   const user = {
     id: "user-1",

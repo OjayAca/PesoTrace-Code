@@ -212,39 +212,84 @@ export function normalizeCategory(value) {
   return category;
 }
 
-export function sortTransactionsDesc(items) {
-  return [...items].sort((left, right) => {
-    const leftDate = new Date(left.transactionDate).getTime();
-    const rightDate = new Date(right.transactionDate).getTime();
+export function normalizeSortOrder(value) {
+  const sortOrder = String(value || "desc").trim().toLowerCase();
 
-    if (leftDate !== rightDate) {
-      return rightDate - leftDate;
+  if (!["asc", "desc"].includes(sortOrder)) {
+    throw new Error("Sort order must be asc or desc.");
+  }
+
+  return sortOrder;
+}
+
+export function sortTransactions(items, { sortBy = "date", sortOrder = "desc" } = {}) {
+  const normalizedSortBy = String(sortBy || "date").trim().toLowerCase();
+  const normalizedSortOrder = normalizeSortOrder(sortOrder);
+  const direction = normalizedSortOrder === "asc" ? 1 : -1;
+
+  return [...items].sort((left, right) => {
+    let comparison = 0;
+
+    if (normalizedSortBy === "amount") {
+      comparison = Number(left.amount) - Number(right.amount);
+    } else if (normalizedSortBy === "title") {
+      comparison = String(left.title || "").localeCompare(String(right.title || ""));
+    } else {
+      const leftDate = new Date(left.transactionDate).getTime();
+      const rightDate = new Date(right.transactionDate).getTime();
+      comparison = leftDate - rightDate;
+
+      if (comparison === 0) {
+        comparison =
+          new Date(left.updatedAt || left.createdAt).getTime() -
+          new Date(right.updatedAt || right.createdAt).getTime();
+      }
     }
 
-    return new Date(right.updatedAt || right.createdAt).getTime() -
-      new Date(left.updatedAt || left.createdAt).getTime();
+    if (comparison === 0) {
+      comparison = String(left.id || "").localeCompare(String(right.id || ""));
+    }
+
+    return comparison * direction;
   });
 }
 
 export function getUserTransactions(userId, filters = {}, storeData = EMPTY_STORE_DATA) {
   const month = filters.month ? normalizeMonth(filters.month) : "";
   const includeRecurring = filters.includeRecurring !== false;
-  const baseTransactions = storeData.transactions
-    .filter((transaction) => {
-      if (transaction.userId !== userId) {
-        return false;
-      }
+  const startDate = filters.startDate ? normalizeDate(filters.startDate) : "";
+  const endDate = filters.endDate ? normalizeDate(filters.endDate) : "";
+  const sortBy = filters.sortBy ? String(filters.sortBy).trim().toLowerCase() : "date";
+  const sortOrder = filters.sortOrder ? normalizeSortOrder(filters.sortOrder) : "desc";
+  function isInRequestedRange(transaction) {
+    if (month && !transaction.transactionDate.startsWith(month)) {
+      return false;
+    }
 
-      return month ? transaction.transactionDate.startsWith(month) : true;
-    })
+    if (startDate && transaction.transactionDate < startDate) {
+      return false;
+    }
+
+    if (endDate && transaction.transactionDate > endDate) {
+      return false;
+    }
+
+    return true;
+  }
+
+  const baseTransactions = storeData.transactions
+    .filter((transaction) => transaction.userId === userId && isInRequestedRange(transaction))
     .map(normalizeTransactionShape);
 
   const recurringTransactions =
-    includeRecurring && month ? buildRecurringTransactions(userId, month, storeData) : [];
+    includeRecurring && month
+      ? buildRecurringTransactions(userId, month, storeData).filter(isInRequestedRange)
+      : [];
 
-  return sortTransactionsDesc(
-    applyTransactionFilters([...baseTransactions, ...recurringTransactions], filters),
-  );
+  return sortTransactions(applyTransactionFilters([...baseTransactions, ...recurringTransactions], filters), {
+    sortBy,
+    sortOrder,
+  });
 }
 
 export function getMonthlySummary(userId, month, storeData = EMPTY_STORE_DATA) {

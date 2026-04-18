@@ -7,6 +7,7 @@ import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
+  Copy,
   Clock,
   Download,
   FileText,
@@ -53,6 +54,19 @@ const TABS = [
   { id: "reports", label: "Reports", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: Settings },
 ];
+
+const TRANSACTION_FILTERS_STORAGE_KEY = "pesotrace-transaction-filters";
+const ONBOARDING_DISMISS_STORAGE_KEY = "pesotrace-onboarding-dismissed";
+const LAST_EXPORT_STORAGE_KEY = "pesotrace-last-exported-at";
+const DEFAULT_TRANSACTION_FILTERS = {
+  type: "",
+  category: "",
+  query: "",
+  startDate: "",
+  endDate: "",
+  sortBy: "date",
+  sortOrder: "desc",
+};
 
 function getCurrentMonth() {
   const now = new Date();
@@ -107,6 +121,90 @@ function downloadJson(filename, payload) {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(objectUrl);
+}
+
+function downloadText(filename, content, mimeType = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function escapeCsv(value) {
+  const text = String(value ?? "");
+
+  if (/[",\n]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+
+  return text;
+}
+
+function loadStoredTransactionFilters() {
+  if (typeof window === "undefined") {
+    return DEFAULT_TRANSACTION_FILTERS;
+  }
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(TRANSACTION_FILTERS_STORAGE_KEY) || "null");
+    if (!stored || typeof stored !== "object") {
+      return DEFAULT_TRANSACTION_FILTERS;
+    }
+
+    return {
+      ...DEFAULT_TRANSACTION_FILTERS,
+      type: String(stored.type || ""),
+      category: String(stored.category || ""),
+      query: String(stored.query || ""),
+      startDate: String(stored.startDate || ""),
+      endDate: String(stored.endDate || ""),
+      sortBy: String(stored.sortBy || "date"),
+      sortOrder: String(stored.sortOrder || "desc"),
+    };
+  } catch {
+    return DEFAULT_TRANSACTION_FILTERS;
+  }
+}
+
+function buildMonthDate(month, sourceDate = "") {
+  const day = String(sourceDate || "").slice(8, 10) || "01";
+  return `${month}-${day}`;
+}
+
+function buildTransactionFormFromSource(source, month = getCurrentMonth()) {
+  if (!source) {
+    return null;
+  }
+
+  return {
+    id: "",
+    title: source.title || "",
+    amount: String(source.amount ?? ""),
+    transactionDate:
+      source.transactionDate && source.transactionDate.startsWith(month)
+        ? source.transactionDate
+        : buildMonthDate(month, source.transactionDate || source.startDate || ""),
+    type: source.type || "expense",
+    category: source.category || "Other",
+    notes: source.notes || "",
+  };
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "Never";
+  }
+
+  return new Date(value).toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function getStatusMeta(summary) {
@@ -622,10 +720,20 @@ function Dashboard() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
-  const [filters, setFilters] = useState({
-    type: "",
-    category: "",
-    query: "",
+  const [filters, setFilters] = useState(loadStoredTransactionFilters);
+  const [lastExportedAt, setLastExportedAt] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    return localStorage.getItem(LAST_EXPORT_STORAGE_KEY) || "";
+  });
+  const [checklistDismissed, setChecklistDismissed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return localStorage.getItem(ONBOARDING_DISMISS_STORAGE_KEY) === "true";
   });
   const [budgetAmount, setBudgetAmount] = useState("");
   const [budgetTopUpAmount, setBudgetTopUpAmount] = useState("");
@@ -779,6 +887,10 @@ function Dashboard() {
         type: nextFilters.type,
         category: nextFilters.category,
         query: nextFilters.query,
+        startDate: nextFilters.startDate,
+        endDate: nextFilters.endDate,
+        sortBy: nextFilters.sortBy,
+        sortOrder: nextFilters.sortOrder,
         includeRecurring: "true",
       });
       setTransactions(response.transactions || []);
@@ -801,7 +913,24 @@ function Dashboard() {
 
   useEffect(() => {
     loadFilteredTransactions(selectedMonth, filters);
-  }, [selectedMonth, filters.type, filters.category, filters.query]);
+  }, [
+    selectedMonth,
+    filters.type,
+    filters.category,
+    filters.query,
+    filters.startDate,
+    filters.endDate,
+    filters.sortBy,
+    filters.sortOrder,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    localStorage.setItem(TRANSACTION_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
 
   useEffect(() => {
     if (!flash) {
@@ -837,6 +966,42 @@ function Dashboard() {
     };
   }, [confirmDialog, confirmingAction]);
 
+  useEffect(() => {
+    function handleWorkspaceShortcut(event) {
+      if (confirmDialog) {
+        return;
+      }
+
+      if (!(event.metaKey || event.ctrlKey) || !event.altKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.target;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      const key = String(event.key || "").toLowerCase();
+
+      if (key === "n") {
+        event.preventDefault();
+        handleStartNewTransaction();
+      } else if (key === "r") {
+        event.preventDefault();
+        setActiveView("reports");
+      } else if (key === "s") {
+        event.preventDefault();
+        setActiveView("settings");
+      } else if (key === "d") {
+        event.preventDefault();
+        setActiveView("dashboard");
+      }
+    }
+
+    window.addEventListener("keydown", handleWorkspaceShortcut);
+    return () => window.removeEventListener("keydown", handleWorkspaceShortcut);
+  }, [confirmDialog, selectedMonth]);
+
   const monthLabel = formatMonthLabel(selectedMonth);
   const statusMeta = getStatusMeta(dashboard);
   const StatusIcon = statusMeta.icon;
@@ -865,6 +1030,8 @@ function Dashboard() {
     1,
   );
   const latestTransactions = transactions.slice(0, 5);
+  const latestManualTransaction =
+    transactions.find((transaction) => !transaction.isRecurring) || transactions[0] || null;
   const budgetCardLabel =
     budgetValue === null
       ? "Expense budget progress"
@@ -883,6 +1050,74 @@ function Dashboard() {
         ? `${formatCurrency(totalExpenses)} spent against ${formatCurrency(budgetValue)} for ${monthLabel}.`
         : `${formatCurrency(totalExpenses)} spent of ${formatCurrency(budgetValue)} for ${monthLabel}.`
       : "Set a budget in this month or use a default budget in Settings.";
+  const selectedMonthDate = new Date(`${selectedMonth}-01T00:00:00`);
+  const monthDays = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0).getDate();
+  const currentMonthKey = getCurrentMonth();
+  const monthProgressDays =
+    selectedMonth === currentMonthKey ? new Date().getDate() : monthDays;
+  const budgetPace =
+    budgetValue === null
+      ? null
+      : roundMoney((budgetValue / monthDays) * monthProgressDays);
+  const budgetPaceDelta = budgetPace === null ? null : roundMoney(budgetPace - totalExpenses);
+  const budgetPaceCopy =
+    budgetPaceDelta === null
+      ? "Set a budget to see whether this month is ahead or behind pace."
+      : budgetPaceDelta >= 0
+        ? `${formatCurrency(budgetPaceDelta)} under the expected pace for ${monthLabel}.`
+        : `${formatCurrency(Math.abs(budgetPaceDelta))} over the expected pace for ${monthLabel}.`;
+  const recurringTotal = transactions.reduce((sum, transaction) => {
+    if (!transaction.isRecurring) {
+      return sum;
+    }
+
+    return sum + Number(transaction.amount || 0);
+  }, 0);
+  const monthlyTrend = reports?.monthlyTrend || [];
+  const currentTrend = monthlyTrend[monthlyTrend.length - 1] || null;
+  const previousTrend = monthlyTrend[monthlyTrend.length - 2] || null;
+  const reportComparisons = currentTrend && previousTrend
+    ? {
+      expenseDelta: roundMoney(Number(currentTrend.totalExpenses || 0) - Number(previousTrend.totalExpenses || 0)),
+      incomeDelta: roundMoney(Number(currentTrend.totalIncome || 0) - Number(previousTrend.totalIncome || 0)),
+      budgetDelta: roundMoney(
+        Number(currentTrend.budget || 0) - Number(previousTrend.budget || 0),
+      ),
+    }
+    : null;
+  const onboardingChecklist = useMemo(() => {
+    const profileComplete = Boolean(
+      settingsData?.user?.name?.trim() && settingsData?.user?.email?.trim(),
+    );
+    const budgetReady = budgetValue !== null;
+    const transactionReady = (settingsData?.stats?.transactionCount || 0) > 0;
+    const recurringReady = (settingsData?.stats?.recurringCount || 0) > 0;
+
+    return [
+      {
+        id: "profile",
+        label: "Profile details saved",
+        complete: profileComplete,
+      },
+      {
+        id: "budget",
+        label: "Budget added for this month",
+        complete: budgetReady,
+      },
+      {
+        id: "transactions",
+        label: "First transaction recorded",
+        complete: transactionReady,
+      },
+      {
+        id: "recurring",
+        label: "Recurring template created",
+        complete: recurringReady,
+      },
+    ];
+  }, [budgetValue, settingsData?.stats?.recurringCount, settingsData?.stats?.transactionCount, settingsData?.user?.email, settingsData?.user?.name]);
+  const onboardingComplete = onboardingChecklist.every((item) => item.complete);
+  const onboardingProgress = onboardingChecklist.filter((item) => item.complete).length;
 
   const transactionInsights = useMemo(() => {
     if (!transactions.length) {
@@ -948,6 +1183,46 @@ function Dashboard() {
       category: "Other",
       notes: "",
     });
+  }
+
+  function handleStartNewTransaction(source = null) {
+    clearMessages();
+    setTransactionForm(
+      source ? buildTransactionFormFromSource(source, selectedMonth) : {
+        id: "",
+        title: "",
+        amount: "",
+        transactionDate: `${selectedMonth}-01`,
+        type: "expense",
+        category: "Other",
+        notes: "",
+      },
+    );
+    setActiveView("transactions");
+  }
+
+  function handleDuplicateTransaction(transaction) {
+    handleStartNewTransaction(transaction);
+    pushFlash("info", "Transaction duplicated into the entry form.");
+  }
+
+  function handleUseRecurringTemplate(template) {
+    handleStartNewTransaction({
+      ...template,
+      transactionDate: template.startDate,
+    });
+    pushFlash("info", "Recurring template copied into the entry form.");
+  }
+
+  function clearTransactionFilters() {
+    setFilters(DEFAULT_TRANSACTION_FILTERS);
+  }
+
+  function dismissOnboardingChecklist() {
+    setChecklistDismissed(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(ONBOARDING_DISMISS_STORAGE_KEY, "true");
+    }
   }
 
   async function reloadAfterMutation(message) {
@@ -1286,7 +1561,46 @@ function Dashboard() {
     try {
       const payload = await api.exportData();
       downloadJson(`pesotrace-export-${selectedMonth}.json`, payload);
+      const exportedAt = payload.exportedAt || new Date().toISOString();
+      setLastExportedAt(exportedAt);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(LAST_EXPORT_STORAGE_KEY, exportedAt);
+      }
       pushFlash("success", "Data export downloaded.");
+    } catch (exportError) {
+      setError(exportError.message);
+    }
+  }
+
+  async function handleExportCsv() {
+    clearMessages();
+
+    try {
+      const payload = await api.exportData();
+      const headers = [
+        "date",
+        "title",
+        "type",
+        "category",
+        "amount",
+        "notes",
+        "recurring",
+      ];
+      const rows = (payload.transactions || []).map((transaction) => [
+        transaction.transactionDate,
+        transaction.title,
+        transaction.type,
+        transaction.category,
+        transaction.amount,
+        transaction.notes || "",
+        transaction.isRecurring ? "yes" : "no",
+      ]);
+      const csv = [headers.join(","), ...rows.map((row) => row.map(escapeCsv).join(","))].join(
+        "\n",
+      );
+
+      downloadText(`pesotrace-transactions-${selectedMonth}.csv`, csv, "text/csv;charset=utf-8");
+      pushFlash("success", "Transactions CSV downloaded.");
     } catch (exportError) {
       setError(exportError.message);
     }
@@ -1309,6 +1623,14 @@ function Dashboard() {
           await api.clearData();
           resetTransactionForm();
           resetRecurringForm();
+          clearTransactionFilters();
+          setLastExportedAt("");
+          setChecklistDismissed(false);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(TRANSACTION_FILTERS_STORAGE_KEY);
+            localStorage.removeItem(LAST_EXPORT_STORAGE_KEY);
+            localStorage.removeItem(ONBOARDING_DISMISS_STORAGE_KEY);
+          }
           await reloadAfterMutation("All finance data cleared.");
         } catch (clearError) {
           setError(clearError.message);
@@ -1406,6 +1728,7 @@ function Dashboard() {
               <span style={{ width: `${progress}%` }} />
             </div>
             <p className="progress-caption">{statusMeta.description}</p>
+            <p className="progress-caption">{budgetPaceCopy}</p>
           </article>
         </section>
 
@@ -1510,6 +1833,53 @@ function Dashboard() {
               </div>
             </div>
           </article>
+
+          {!onboardingComplete && !checklistDismissed ? (
+            <article className="panel">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">
+                    <Target size={12} /> Getting started
+                  </p>
+                  <h2>Finish the setup</h2>
+                </div>
+                <button
+                  className="secondary-button compact-button"
+                  type="button"
+                  onClick={dismissOnboardingChecklist}
+                >
+                  Hide
+                </button>
+              </div>
+
+              <div className="insight-list onboarding-list">
+                {onboardingChecklist.map((item) => (
+                  <div className="insight-item" key={item.id}>
+                    <span className="check-item-copy">
+                      <CheckCircle2 size={14} className={item.complete ? "check-item-complete" : ""} />
+                      {item.label}
+                    </span>
+                    <strong>{item.complete ? "Done" : "Next"}</strong>
+                  </div>
+                ))}
+              </div>
+              <p className="section-caption">
+                Progress {onboardingProgress}/{onboardingChecklist.length} complete.
+              </p>
+
+              <div className="button-row">
+                <button className="primary-button" type="button" onClick={handleStartNewTransaction}>
+                  <Plus size={16} /> New transaction
+                </button>
+                <button className="secondary-button" type="button" onClick={() => setActiveView("reports")}>
+                  Open reports
+                </button>
+              </div>
+              <p className="section-caption">
+                Shortcuts: Ctrl+Alt+N new transaction, Ctrl+Alt+R reports, Ctrl+Alt+S settings.
+              </p>
+            </article>
+          ) : null}
         </section>
       </>
     );
@@ -1527,15 +1897,26 @@ function Dashboard() {
                 </p>
                 <h2>{transactionForm.id ? "Edit transaction" : "Add transaction"}</h2>
               </div>
-              {transactionForm.id ? (
-                <button
-                  className="secondary-button compact-button"
-                  type="button"
-                  onClick={resetTransactionForm}
-                >
-                  <X size={14} /> Cancel edit
-                </button>
-              ) : null}
+              <div className="row-actions">
+                {!transactionForm.id && latestManualTransaction ? (
+                  <button
+                    className="secondary-button compact-button"
+                    type="button"
+                    onClick={() => handleStartNewTransaction(latestManualTransaction)}
+                  >
+                    <Copy size={14} /> Use latest
+                  </button>
+                ) : null}
+                {transactionForm.id ? (
+                  <button
+                    className="secondary-button compact-button"
+                    type="button"
+                    onClick={resetTransactionForm}
+                  >
+                    <X size={14} /> Cancel edit
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <form className="stack-form" onSubmit={handleTransactionSubmit}>
@@ -1682,10 +2063,17 @@ function Dashboard() {
                 </p>
                 <h2>Transactions for {monthLabel}</h2>
               </div>
+              <button
+                className="secondary-button compact-button"
+                type="button"
+                onClick={clearTransactionFilters}
+              >
+                Clear filters
+              </button>
             </div>
 
             <div className="filter-grid">
-              <label className="filter-field">
+              <label className="filter-field filter-search">
                 <span>Search</span>
                 <div className="input-with-icon">
                   <Search size={15} />
@@ -1737,6 +2125,67 @@ function Dashboard() {
                       {category}
                     </option>
                   ))}
+                </select>
+              </label>
+
+              <label className="filter-field">
+                <span>Start date</span>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      startDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="filter-field">
+                <span>End date</span>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      endDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="filter-field">
+                <span>Sort by</span>
+                <select
+                  value={filters.sortBy}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      sortBy: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="date">Date</option>
+                  <option value="amount">Amount</option>
+                  <option value="title">Title</option>
+                </select>
+              </label>
+
+              <label className="filter-field">
+                <span>Order</span>
+                <select
+                  value={filters.sortOrder}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      sortOrder: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="desc">Newest first</option>
+                  <option value="asc">Oldest first</option>
                 </select>
               </label>
             </div>
@@ -1797,6 +2246,14 @@ function Dashboard() {
                             <button
                               className="icon-btn"
                               type="button"
+                              onClick={() => handleDuplicateTransaction(transaction)}
+                              title="Duplicate"
+                            >
+                              <Copy size={14} />
+                            </button>
+                            <button
+                              className="icon-btn"
+                              type="button"
                               onClick={() => handleEditTransaction(transaction)}
                               title={transaction.isRecurring ? "Managed in recurring templates" : "Edit"}
                               aria-label={
@@ -1853,11 +2310,6 @@ function Dashboard() {
                           className="action-button"
                           type="button"
                           onClick={() => handleEditTransaction(transaction)}
-                          aria-label={
-                            transaction.isRecurring
-                              ? "Recurring entries are managed in recurring templates"
-                              : `Edit ${transaction.title}`
-                          }
                         >
                           <Pencil size={13} /> Edit
                         </button>
@@ -2106,6 +2558,14 @@ function Dashboard() {
                       <button
                         className="icon-btn"
                         type="button"
+                        onClick={() => handleUseRecurringTemplate(template)}
+                        title="Use template"
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        className="icon-btn"
+                        type="button"
                         onClick={() => handleEditRecurring(template)}
                       >
                         <Pencil size={14} />
@@ -2277,6 +2737,38 @@ function Dashboard() {
               <div className="insight-item">
                 <span>Recurring templates</span>
                 <strong>{reports?.highlights?.recurringTemplateCount || 0}</strong>
+              </div>
+              <div className="insight-item">
+                <span>Expense change vs previous month</span>
+                <strong>
+                  {reportComparisons
+                    ? `${reportComparisons.expenseDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(reportComparisons.expenseDelta))}`
+                    : "Not enough history"}
+                </strong>
+              </div>
+              <div className="insight-item">
+                <span>Income change vs previous month</span>
+                <strong>
+                  {reportComparisons
+                    ? `${reportComparisons.incomeDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(reportComparisons.incomeDelta))}`
+                    : "Not enough history"}
+                </strong>
+              </div>
+              <div className="insight-item">
+                <span>Budget change vs previous month</span>
+                <strong>
+                  {reportComparisons
+                    ? `${reportComparisons.budgetDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(reportComparisons.budgetDelta))}`
+                    : "Not enough history"}
+                </strong>
+              </div>
+              <div className="insight-item">
+                <span>Recurring load</span>
+                <strong>
+                  {transactions.length
+                    ? `${formatCurrency(recurringTotal)} from ${transactions.filter((transaction) => transaction.isRecurring).length} entries`
+                    : "No recurring entries"}
+                </strong>
               </div>
             </div>
           </article>
@@ -2493,11 +2985,21 @@ function Dashboard() {
               </div>
               <strong>{settingsData?.stats?.recurringCount || 0}</strong>
             </div>
+            <div className="list-row list-row-compact">
+              <div>
+                <strong>Last export</strong>
+                <p>{formatDateTime(lastExportedAt)}</p>
+              </div>
+              <strong>{lastExportedAt ? "Saved" : "None"}</strong>
+            </div>
           </div>
 
           <div className="button-row">
             <button className="secondary-button" type="button" onClick={handleExportData}>
               <Download size={16} /> Export JSON
+            </button>
+            <button className="secondary-button" type="button" onClick={handleExportCsv}>
+              <FileText size={16} /> Export CSV
             </button>
             <button className="danger-button" type="button" onClick={handleClearData}>
               <Trash2 size={16} /> Clear finance data

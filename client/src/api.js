@@ -100,10 +100,10 @@ export const api = {
   getTransactions(params = {}) {
     return request(`/transactions${toQueryString(params)}`);
   },
-  saveBudget(month, amount) {
+  saveBudget(month, amount, mode = "set") {
     return request(`/budgets/${encodeURIComponent(month)}`, {
       method: "PUT",
-      body: JSON.stringify({ amount }),
+      body: JSON.stringify({ amount, mode }),
     });
   },
   createTransaction(payload) {

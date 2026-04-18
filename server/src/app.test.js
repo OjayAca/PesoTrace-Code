@@ -235,6 +235,40 @@ test("me rejects invalid tokens", async (t) => {
   assert.equal(data.message, "Your session is invalid or expired.");
 });
 
+test("cors accepts the 127.0.0.1 alias for the configured client origin", async (t) => {
+  const { server, request } = await startTestApp();
+  t.after(() => closeServer(server));
+
+  const { response } = await request("/api/auth/login", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://127.0.0.1:5173",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "Content-Type",
+    },
+  });
+
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "http://127.0.0.1:5173");
+});
+
+test("cors accepts other localhost dev ports in development", async (t) => {
+  const { server, request } = await startTestApp();
+  t.after(() => closeServer(server));
+
+  const { response } = await request("/api/auth/login", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://localhost:5174",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "Content-Type",
+    },
+  });
+
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:5174");
+});
+
 test("dashboard summary includes income, default budget, and recurring entries", async (t) => {
   const user = {
     id: "user-1",
@@ -295,6 +329,247 @@ test("dashboard summary includes income, default budget, and recurring entries",
   assert.equal(data.summary.budget, 1200);
   assert.equal(data.summary.budgetSource, "default");
   assert.equal(data.summary.transactionCount, 2);
+  assert.equal(data.summary.statusType, "remaining");
+  assert.equal(data.summary.statusAmount, 701);
+});
+
+test("dashboard summary reports remaining budget when expenses stay below budget", async (t) => {
+  const user = {
+    id: "user-remaining",
+    name: "Remaining User",
+    email: "remaining@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "light",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    transactions: [
+      {
+        id: "txn-remaining",
+        userId: "user-remaining",
+        title: "Groceries",
+        amount: 2000,
+        type: "expense",
+        category: "Food",
+        notes: "",
+        transactionDate: "2026-04-05",
+        createdAt: "2026-04-05T00:00:00.000Z",
+        updatedAt: "2026-04-05T00:00:00.000Z",
+      },
+    ],
+    budgets: [
+      {
+        id: "budget-remaining",
+        userId: "user-remaining",
+        month: "2026-04",
+        amount: 5000,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/dashboard?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(data.summary.totalExpenses, 2000);
+  assert.equal(data.summary.budget, 5000);
+  assert.equal(data.summary.budgetSource, "month");
+  assert.equal(data.summary.statusType, "remaining");
+  assert.equal(data.summary.statusAmount, 3000);
+});
+
+test("dashboard summary reports exact match when expenses equal budget", async (t) => {
+  const user = {
+    id: "user-exact",
+    name: "Exact User",
+    email: "exact@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "light",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    transactions: [
+      {
+        id: "txn-exact",
+        userId: "user-exact",
+        title: "School supplies",
+        amount: 5000,
+        type: "expense",
+        category: "School",
+        notes: "",
+        transactionDate: "2026-04-08",
+        createdAt: "2026-04-08T00:00:00.000Z",
+        updatedAt: "2026-04-08T00:00:00.000Z",
+      },
+    ],
+    budgets: [
+      {
+        id: "budget-exact",
+        userId: "user-exact",
+        month: "2026-04",
+        amount: 5000,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/dashboard?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(data.summary.totalExpenses, 5000);
+  assert.equal(data.summary.statusType, "exact");
+  assert.equal(data.summary.statusAmount, 0);
+});
+
+test("dashboard summary reports deficit when expenses exceed budget", async (t) => {
+  const user = {
+    id: "user-deficit",
+    name: "Deficit User",
+    email: "deficit@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "dark",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    transactions: [
+      {
+        id: "txn-deficit",
+        userId: "user-deficit",
+        title: "Project materials",
+        amount: 6200,
+        type: "expense",
+        category: "School",
+        notes: "",
+        transactionDate: "2026-04-12",
+        createdAt: "2026-04-12T00:00:00.000Z",
+        updatedAt: "2026-04-12T00:00:00.000Z",
+      },
+    ],
+    budgets: [
+      {
+        id: "budget-deficit",
+        userId: "user-deficit",
+        month: "2026-04",
+        amount: 5000,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/dashboard?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(data.summary.totalExpenses, 6200);
+  assert.equal(data.summary.statusType, "deficit");
+  assert.equal(data.summary.statusAmount, -1200);
+});
+
+test("budget top-ups add to the current month budget", async (t) => {
+  const user = {
+    id: "user-top-up",
+    name: "Top Up User",
+    email: "topup@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "light",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    transactions: [
+      {
+        id: "txn-top-up",
+        userId: "user-top-up",
+        title: "Lunch",
+        amount: 2000,
+        type: "expense",
+        category: "Food",
+        notes: "",
+        transactionDate: "2026-04-06",
+        createdAt: "2026-04-06T00:00:00.000Z",
+        updatedAt: "2026-04-06T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const setResponse = await request("/api/budgets/2026-04", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      amount: 5000,
+      mode: "set",
+    }),
+  });
+
+  const topUpResponse = await request("/api/budgets/2026-04", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      amount: 1000,
+      mode: "add",
+    }),
+  });
+
+  const dashboardResponse = await request("/api/dashboard?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(setResponse.response.status, 200);
+  assert.equal(topUpResponse.response.status, 200);
+  assert.equal(dashboardResponse.response.status, 200);
+  assert.equal(dashboardResponse.data.summary.budget, 6000);
+  assert.equal(dashboardResponse.data.summary.totalExpenses, 2000);
+  assert.equal(dashboardResponse.data.summary.statusType, "remaining");
+  assert.equal(dashboardResponse.data.summary.statusAmount, 4000);
 });
 
 test("transactions support category and type filters", async (t) => {

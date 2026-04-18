@@ -1,18 +1,24 @@
 import dotenv from "dotenv";
-import { createStoreFromEnv } from "./store.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createMemoryStore, createStoreFromEnv, normalizeStoreData } from "./store.js";
 import { createApp } from "./app.js";
 
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
-const store = createStoreFromEnv(process.env);
-const app = createApp({
-  store,
-  clientOrigin: CLIENT_ORIGIN,
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const bundledSnapshotPath = path.resolve(__dirname, "../data/db.json");
 
-function listen(port) {
+async function loadBundledSnapshot() {
+  const content = await fs.readFile(bundledSnapshotPath, "utf8");
+  return normalizeStoreData(JSON.parse(content));
+}
+
+function listen(app, port) {
   return new Promise((resolve, reject) => {
     const server = app.listen(port);
 
@@ -29,9 +35,41 @@ function listen(port) {
   });
 }
 
+async function createRuntimeStore() {
+  let mysqlStore;
+
+  try {
+    mysqlStore = createStoreFromEnv(process.env);
+    await mysqlStore.init();
+    return mysqlStore;
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw error;
+    }
+
+    console.warn(
+      `MySQL store unavailable, starting with bundled JSON data instead: ${error.message}`,
+    );
+
+    if (mysqlStore) {
+      await mysqlStore.close().catch(() => {});
+    }
+
+    const seedData = await loadBundledSnapshot();
+    const memoryStore = createMemoryStore(seedData);
+    await memoryStore.init();
+    return memoryStore;
+  }
+}
+
 export async function startServer() {
-  await store.init();
-  return listen(PORT);
+  const store = await createRuntimeStore();
+  const app = createApp({
+    store,
+    clientOrigin: CLIENT_ORIGIN,
+  });
+
+  return listen(app, PORT);
 }
 
 if (process.env.NODE_ENV !== "test") {
@@ -47,5 +85,3 @@ if (process.env.NODE_ENV !== "test") {
     process.exit(1);
   });
 }
-
-export { app };

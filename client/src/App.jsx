@@ -89,6 +89,10 @@ function formatMonthLabel(value) {
   });
 }
 
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 function getFirstName(name) {
   return name?.trim().split(/\s+/)[0] || "there";
 }
@@ -262,6 +266,7 @@ function AuthScreen() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
   });
 
   async function handleSubmit(event) {
@@ -271,6 +276,10 @@ function AuthScreen() {
 
     try {
       if (mode === "register") {
+        if (form.password !== form.confirmPassword) {
+          throw new Error("Passwords do not match.");
+        }
+
         await register(form);
       } else {
         await login({
@@ -377,6 +386,7 @@ function AuthScreen() {
                   setForm((current) => ({ ...current, name: event.target.value }))
                 }
                 placeholder="Juan Dela Cruz"
+                autoComplete="name"
                 required
               />
             </label>
@@ -394,6 +404,7 @@ function AuthScreen() {
                 setForm((current) => ({ ...current, email: event.target.value }))
               }
               placeholder="you@example.com"
+              autoComplete="email"
               required
             />
           </label>
@@ -411,9 +422,30 @@ function AuthScreen() {
               }
               minLength={6}
               placeholder="At least 6 characters"
+              autoComplete={mode === "register" ? "new-password" : "current-password"}
               required
             />
           </label>
+
+          {mode === "register" ? (
+            <label>
+              <div className="field-label">
+                <span>Confirm password</span>
+                <small>Must match your password.</small>
+              </div>
+              <input
+                type="password"
+                value={form.confirmPassword}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, confirmPassword: event.target.value }))
+                }
+                minLength={6}
+                placeholder="Re-enter your password"
+                autoComplete="new-password"
+                required
+              />
+            </label>
+          ) : null}
 
           {error ? (
             <p className="form-error">
@@ -461,6 +493,7 @@ function Dashboard() {
     query: "",
   });
   const [budgetAmount, setBudgetAmount] = useState("");
+  const [budgetTopUpAmount, setBudgetTopUpAmount] = useState("");
   const [transactionForm, setTransactionForm] = useState({
     id: "",
     title: "",
@@ -590,6 +623,7 @@ function Dashboard() {
           ? ""
           : String(dashboardResponse.summary.budget),
       );
+      setBudgetTopUpAmount("");
     } catch (loadError) {
       if (loadIdRef.current === requestId) {
         setError(loadError.message);
@@ -677,10 +711,16 @@ function Dashboard() {
     dashboard?.budget === null || dashboard?.budget === undefined
       ? null
       : Number(dashboard.budget);
-  const progress =
-    budgetValue && budgetValue > 0
-      ? Math.min((totalExpenses / budgetValue) * 100, 100)
-      : 0;
+  const budgetRemaining =
+    budgetValue === null ? null : roundMoney(budgetValue - totalExpenses);
+  const isOverBudget = budgetRemaining !== null && budgetRemaining < 0;
+  let progress = 0;
+
+  if (budgetValue !== null && budgetValue > 0) {
+    progress = Math.min((totalExpenses / budgetValue) * 100, 100);
+  } else if (budgetValue === 0 && totalExpenses > 0) {
+    progress = 100;
+  }
   const averageExpense =
     reports?.summary?.transactionCount && totalExpenses > 0
       ? totalExpenses / Math.max(reports.summary.transactionCount, 1)
@@ -690,6 +730,24 @@ function Dashboard() {
     1,
   );
   const latestTransactions = transactions.slice(0, 5);
+  const budgetCardLabel =
+    budgetValue === null
+      ? "Expense budget progress"
+      : isOverBudget
+        ? "Over budget"
+        : "Remaining budget";
+  const budgetCardHeadline =
+    budgetValue === null
+      ? formatCurrency(totalExpenses)
+      : isOverBudget
+        ? `Over by ${formatCurrency(Math.abs(budgetRemaining))}`
+        : formatCurrency(budgetRemaining);
+  const budgetCardCopy =
+    budgetValue !== null
+      ? isOverBudget
+        ? `${formatCurrency(totalExpenses)} spent against ${formatCurrency(budgetValue)} for ${monthLabel}.`
+        : `${formatCurrency(totalExpenses)} spent of ${formatCurrency(budgetValue)} for ${monthLabel}.`
+      : "Set a budget in this month or use a default budget in Settings.";
 
   const transactionInsights = useMemo(() => {
     if (!transactions.length) {
@@ -767,20 +825,56 @@ function Dashboard() {
     pushFlash("success", message);
   }
 
-  async function handleBudgetSubmit(event) {
-    event.preventDefault();
+  // Keep the monthly budget field reusable for both absolute saves and additive top-ups.
+  async function submitBudgetChange(mode, amount, successMessage) {
     clearMessages();
     setSavingBudget(true);
 
     try {
-      await api.saveBudget(selectedMonth, budgetAmount);
+      await api.saveBudget(selectedMonth, amount, mode);
       await loadWorkspaceData(selectedMonth);
-      pushFlash("success", `Budget saved for ${monthLabel}.`);
+
+      if (mode === "add") {
+        setBudgetTopUpAmount("");
+      }
+
+      pushFlash("success", successMessage);
     } catch (budgetError) {
       setError(budgetError.message);
     } finally {
       setSavingBudget(false);
     }
+  }
+
+  async function handleBudgetSubmit(event) {
+    event.preventDefault();
+    await submitBudgetChange("set", budgetAmount, `Budget saved for ${monthLabel}.`);
+  }
+
+  async function handleBudgetTopUp(event) {
+    event.preventDefault();
+    await submitBudgetChange("add", budgetTopUpAmount, `Budget topped up for ${monthLabel}.`);
+  }
+
+  // Browser print preview doubles as the PDF export path for the selected month's report.
+  async function handleReportOutput() {
+    clearMessages();
+    setActiveView("reports");
+
+    const previousTitle = document.title;
+    document.title = `PesoTrace - ${monthLabel} report`;
+
+    window.addEventListener(
+      "afterprint",
+      () => {
+        document.title = previousTitle;
+      },
+      { once: true },
+    );
+
+    window.requestAnimationFrame(() => {
+      window.print();
+    });
   }
 
   async function handleTransactionSubmit(event) {
@@ -1170,13 +1264,9 @@ function Dashboard() {
             <div className="status-pill">
               <StatusIcon size={13} /> {statusMeta.label}
             </div>
-            <p className="summary-card-label">Expense budget progress</p>
-            <h2>{formatCurrency(totalExpenses)}</h2>
-            <p className="summary-card-copy">
-              {budgetValue !== null
-                ? `Expenses tracked against ${formatCurrency(budgetValue)} for ${monthLabel}.`
-                : "Set a budget in this month or use a default budget in Settings."}
-            </p>
+            <p className="summary-card-label">{budgetCardLabel}</p>
+            <h2>{budgetCardHeadline}</h2>
+            <p className="summary-card-copy">{budgetCardCopy}</p>
             <div className="progress-track" aria-hidden="true">
               <span style={{ width: `${progress}%` }} />
             </div>
@@ -1657,11 +1747,7 @@ function Dashboard() {
               <label>
                 <div className="field-label">
                   <span>Monthly budget</span>
-                  <small>
-                    {dashboard?.budgetSource === "default"
-                      ? "This month currently uses your default budget."
-                      : "Override or set a budget for this month."}
-                  </small>
+                  <small>Saving replaces the budget for this month.</small>
                 </div>
                 <input
                   type="number"
@@ -1669,12 +1755,33 @@ function Dashboard() {
                   step="0.01"
                   value={budgetAmount}
                   onChange={(event) => setBudgetAmount(event.target.value)}
-                  placeholder="Enter budget"
+                  placeholder="Enter monthly budget"
                   required
                 />
               </label>
               <button className="primary-button" type="submit" disabled={savingBudget}>
                 {savingBudget ? "Saving..." : "Save budget"}
+              </button>
+            </form>
+
+            <form className="stack-form" onSubmit={handleBudgetTopUp}>
+              <label>
+                <div className="field-label">
+                  <span>Add to budget</span>
+                  <small>Adds the entered amount to the current month total.</small>
+                </div>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={budgetTopUpAmount}
+                  onChange={(event) => setBudgetTopUpAmount(event.target.value)}
+                  placeholder="Enter top-up amount"
+                  required
+                />
+              </label>
+              <button className="secondary-button" type="submit" disabled={savingBudget}>
+                {savingBudget ? "Adding..." : "Add to budget"}
               </button>
             </form>
           </article>
@@ -1876,127 +1983,157 @@ function Dashboard() {
 
   function renderReportsView() {
     return (
-      <section className="content-grid reports-grid">
-        <article className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">
-                <BarChart3 size={12} /> Trend
-              </p>
-              <h2>Monthly flow</h2>
-            </div>
+      <section className="report-page">
+        <div className="section-heading report-toolbar">
+          <div>
+            <p className="eyebrow">
+              <BarChart3 size={12} /> Monthly report
+            </p>
+            <h2>{monthLabel} reports</h2>
+            <p className="report-toolbar-copy">
+              Export this report to PDF from the browser dialog or print it directly.
+            </p>
           </div>
+          <div className="report-actions">
+            <button
+              className="secondary-button compact-button"
+              type="button"
+              onClick={handleReportOutput}
+            >
+              Export PDF
+            </button>
+            <button
+              className="secondary-button compact-button"
+              type="button"
+              onClick={handleReportOutput}
+            >
+              Print
+            </button>
+          </div>
+        </div>
 
-          <div className="chart-list">
-            {(reports?.monthlyTrend || []).map((item) => (
-              <div className="chart-row" key={item.month}>
-                <div className="chart-row-head">
-                  <strong>{item.label}</strong>
-                  <span>
-                    Expense {formatCurrency(item.totalExpenses)} - Income{" "}
-                    {formatCurrency(item.totalIncome)}
-                  </span>
-                </div>
-                <div className="chart-bar-track">
-                  <span
-                    className="chart-bar-expense"
-                    style={{
-                      width: `${Math.max(
-                        12,
-                        (Number(item.totalExpenses || 0) / trendMaxExpense) * 100,
-                      )}%`,
-                    }}
-                  />
-                </div>
-                <div className="chart-row-foot">
-                  <span>Net {formatCurrency(item.netBalance)}</span>
-                  <span>Budget {formatCurrency(item.budget)}</span>
-                </div>
+        <section className="content-grid reports-grid">
+          <article className="panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">
+                  <BarChart3 size={12} /> Trend
+                </p>
+                <h2>Monthly flow</h2>
               </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">
-                <PieChart size={12} /> Categories
-              </p>
-              <h2>Category breakdown</h2>
             </div>
-          </div>
 
-          {(reports?.categoryBreakdown || []).length === 0 ? (
-            <div className="empty-inline">No category data for this month yet.</div>
-          ) : (
-            <div className="list-stack">
-              {reports.categoryBreakdown.map((item) => (
-                <div className="list-row list-row-compact" key={`${item.type}-${item.category}`}>
-                  <div>
-                    <strong>{item.category}</strong>
-                    <p>{item.type}</p>
+            <div className="chart-list">
+              {(reports?.monthlyTrend || []).map((item) => (
+                <div className="chart-row" key={item.month}>
+                  <div className="chart-row-head">
+                    <strong>{item.label}</strong>
+                    <span>
+                      Expense {formatCurrency(item.totalExpenses)} - Income{" "}
+                      {formatCurrency(item.totalIncome)}
+                    </span>
                   </div>
-                  <strong
-                    className={
-                      item.type === "income" ? "amount-positive" : "amount-negative"
-                    }
-                  >
-                    {item.type === "income" ? "+" : "-"}
-                    {formatCurrency(item.amount)}
-                  </strong>
+                  <div className="chart-bar-track">
+                    <span
+                      className="chart-bar-expense"
+                      style={{
+                        width: `${Math.max(
+                          12,
+                          (Number(item.totalExpenses || 0) / trendMaxExpense) * 100,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="chart-row-foot">
+                    <span>Net {formatCurrency(item.netBalance)}</span>
+                    <span>Budget {formatCurrency(item.budget)}</span>
+                  </div>
                 </div>
               ))}
             </div>
-          )}
-        </article>
+          </article>
 
-        <article className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">
-                <Activity size={12} /> Highlights
-              </p>
-              <h2>Monthly highlights</h2>
+          <article className="panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">
+                  <PieChart size={12} /> Categories
+                </p>
+                <h2>Category breakdown</h2>
+              </div>
             </div>
-          </div>
-          <div className="insight-list">
-            <div className="insight-item">
-              <span>Largest expense</span>
-              <strong>
-                {reports?.highlights?.largestExpense
-                  ? `${reports.highlights.largestExpense.title} - ${formatCurrency(
-                    reports.highlights.largestExpense.amount,
-                  )}`
-                  : "No expense yet"}
-              </strong>
+
+            {(reports?.categoryBreakdown || []).length === 0 ? (
+              <div className="empty-inline">No category data for this month yet.</div>
+            ) : (
+              <div className="list-stack">
+                {reports.categoryBreakdown.map((item) => (
+                  <div className="list-row list-row-compact" key={`${item.type}-${item.category}`}>
+                    <div>
+                      <strong>{item.category}</strong>
+                      <p>{item.type}</p>
+                    </div>
+                    <strong
+                      className={
+                        item.type === "income" ? "amount-positive" : "amount-negative"
+                      }
+                    >
+                      {item.type === "income" ? "+" : "-"}
+                      {formatCurrency(item.amount)}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">
+                  <Activity size={12} /> Highlights
+                </p>
+                <h2>Monthly highlights</h2>
+              </div>
             </div>
-            <div className="insight-item">
-              <span>Largest income</span>
-              <strong>
-                {reports?.highlights?.largestIncome
-                  ? `${reports.highlights.largestIncome.title} - ${formatCurrency(
-                    reports.highlights.largestIncome.amount,
-                  )}`
-                  : "No income yet"}
-              </strong>
+            <div className="insight-list">
+              <div className="insight-item">
+                <span>Largest expense</span>
+                <strong>
+                  {reports?.highlights?.largestExpense
+                    ? `${reports.highlights.largestExpense.title} - ${formatCurrency(
+                      reports.highlights.largestExpense.amount,
+                    )}`
+                    : "No expense yet"}
+                </strong>
+              </div>
+              <div className="insight-item">
+                <span>Largest income</span>
+                <strong>
+                  {reports?.highlights?.largestIncome
+                    ? `${reports.highlights.largestIncome.title} - ${formatCurrency(
+                      reports.highlights.largestIncome.amount,
+                    )}`
+                    : "No income yet"}
+                </strong>
+              </div>
+              <div className="insight-item">
+                <span>Top expense category</span>
+                <strong>
+                  {reports?.highlights?.topExpenseCategory
+                    ? `${reports.highlights.topExpenseCategory.category} - ${formatCurrency(
+                      reports.highlights.topExpenseCategory.amount,
+                    )}`
+                    : "No expense category yet"}
+                </strong>
+              </div>
+              <div className="insight-item">
+                <span>Recurring templates</span>
+                <strong>{reports?.highlights?.recurringTemplateCount || 0}</strong>
+              </div>
             </div>
-            <div className="insight-item">
-              <span>Top expense category</span>
-              <strong>
-                {reports?.highlights?.topExpenseCategory
-                  ? `${reports.highlights.topExpenseCategory.category} - ${formatCurrency(
-                    reports.highlights.topExpenseCategory.amount,
-                  )}`
-                  : "No expense category yet"}
-              </strong>
-            </div>
-            <div className="insight-item">
-              <span>Recurring templates</span>
-              <strong>{reports?.highlights?.recurringTemplateCount || 0}</strong>
-            </div>
-          </div>
-        </article>
+          </article>
+        </section>
       </section>
     );
   }

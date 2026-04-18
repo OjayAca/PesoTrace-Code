@@ -118,6 +118,57 @@ function getRecurringTemplatePayload(body) {
   };
 }
 
+function isLocalDevOrigin(origin) {
+  if (!origin) {
+    return false;
+  }
+
+  try {
+    const url = new URL(origin);
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedOrigin(origin, clientOrigin = "http://localhost:5173") {
+  const allowedOrigins = new Set(
+    clientOrigin
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+
+  if (allowedOrigins.has(origin)) {
+    return true;
+  }
+
+  if (process.env.NODE_ENV !== "production" && isLocalDevOrigin(origin)) {
+    return true;
+  }
+
+  for (const rawOrigin of allowedOrigins) {
+    try {
+      const url = new URL(rawOrigin);
+
+      if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
+        continue;
+      }
+
+      const alternateHost = url.hostname === "localhost" ? "127.0.0.1" : "localhost";
+      const alternateOrigin = `${url.protocol}//${alternateHost}${url.port ? `:${url.port}` : ""}`;
+
+      if (origin === alternateOrigin) {
+        return true;
+      }
+    } catch {
+      // Ignore malformed origins and let cors reject them.
+    }
+  }
+
+  return false;
+}
+
 export function createApp({ store, clientOrigin = "http://localhost:5173" } = {}) {
   if (!store) {
     throw new Error("A store is required.");
@@ -154,7 +205,9 @@ export function createApp({ store, clientOrigin = "http://localhost:5173" } = {}
 
   app.use(
     cors({
-      origin: clientOrigin.split(",").map((origin) => origin.trim()),
+      origin(origin, callback) {
+        callback(null, isAllowedOrigin(origin, clientOrigin));
+      },
     }),
   );
   app.use(express.json());
@@ -360,21 +413,38 @@ export function createApp({ store, clientOrigin = "http://localhost:5173" } = {}
   app.put("/api/budgets/:month", requireAuth, async (req, res) => {
     try {
       const month = normalizeMonth(req.params.month);
-      const amount = toAmount(req.body.amount, "Budget", { allowZero: true });
+      const mode = String(req.body.mode || "set").trim().toLowerCase();
+      if (!["set", "add"].includes(mode)) {
+        throw new Error("Budget mode must be set or add.");
+      }
+
+      const amount =
+        mode === "add"
+          ? toAmount(req.body.amount, "Budget top-up")
+          : toAmount(req.body.amount, "Budget", { allowZero: true });
       const now = new Date().toISOString();
+      const snapshot = await store.getSnapshot();
+      let nextAmount = amount;
+
+      if (mode === "add") {
+        // Top-up mode starts from the current effective budget so default budgets count too.
+        const currentSummary = getMonthlySummary(req.auth.userId, month, snapshot);
+        const currentBudget = currentSummary.budget === null ? 0 : Number(currentSummary.budget);
+        nextAmount = Math.round((currentBudget + amount) * 100) / 100;
+      }
 
       await store.upsertBudget({
         id: crypto.randomUUID(),
         userId: req.auth.userId,
         month,
-        amount,
+        amount: nextAmount,
         createdAt: now,
         updatedAt: now,
       });
 
-      const snapshot = await store.getSnapshot();
+      const updatedSnapshot = await store.getSnapshot();
       return res.json({
-        summary: getMonthlySummary(req.auth.userId, month, snapshot),
+        summary: getMonthlySummary(req.auth.userId, month, updatedSnapshot),
       });
     } catch (error) {
       return res.status(400).json({ message: error.message });

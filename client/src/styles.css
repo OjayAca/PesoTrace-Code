@@ -709,6 +709,21 @@ textarea { resize: vertical; }
   border: 1px solid var(--border);
 }
 
+.month-picker-button {
+  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.month-picker-button:hover {
+  border-color: rgba(15, 124, 96, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.month-picker-button:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 .month-picker-label {
   font-size: 0.68rem;
   font-weight: 800;
@@ -718,6 +733,7 @@ textarea { resize: vertical; }
 }
 
 .month-picker input {
+  width: 100%;
   padding: 0;
   border: none;
   background: transparent;
@@ -725,6 +741,10 @@ textarea { resize: vertical; }
   font-weight: 600;
   font-size: 0.88rem;
   box-shadow: none;
+}
+
+.month-picker-button input {
+  cursor: pointer;
 }
 
 .month-picker input:focus {
@@ -1381,13 +1401,14 @@ textarea { resize: vertical; }
 .filter-grid {
   display: grid;
   gap: 0.9rem;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 1rem;
 }
 
 .filter-field {
   display: grid;
   gap: 0.4rem;
+  min-width: 0;
 }
 
 .filter-search {
@@ -1416,6 +1437,11 @@ textarea { resize: vertical; }
 
 .input-with-icon input {
   padding-left: 2.4rem;
+}
+
+.filter-field input,
+.filter-field select {
+  min-width: 0;
 }
 
 .list-stack {

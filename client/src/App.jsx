@@ -775,6 +775,7 @@ function Dashboard() {
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [confirmingAction, setConfirmingAction] = useState(false);
   const loadIdRef = useRef(0);
+  const monthPickerRef = useRef(null);
 
   function pushFlash(type, message) {
     setFlash({ type, message });
@@ -783,6 +784,26 @@ function Dashboard() {
   function clearMessages() {
     setError("");
     setFlash(null);
+  }
+
+  function openMonthPicker() {
+    const monthInput = monthPickerRef.current;
+
+    if (!monthInput) {
+      return;
+    }
+
+    if (typeof monthInput.showPicker === "function") {
+      try {
+        monthInput.showPicker();
+        return;
+      } catch {
+        // Some browsers expose showPicker but still reject it in edge cases.
+      }
+    }
+
+    monthInput.focus();
+    monthInput.click();
   }
 
   function openConfirmDialog(dialog) {
@@ -3024,9 +3045,20 @@ function Dashboard() {
         </div>
 
         <div className="topbar-actions">
-          <label className="month-picker">
-            <span className="month-picker-label">Active month</span>
+          <div
+            className="month-picker month-picker-button"
+            onClick={(event) => {
+              if (event.target !== monthPickerRef.current) {
+                openMonthPicker();
+              }
+            }}
+          >
+            <label className="month-picker-label" htmlFor="active-month">
+              Active month
+            </label>
             <input
+              id="active-month"
+              ref={monthPickerRef}
               type="month"
               value={selectedMonth}
               onChange={(event) => {
@@ -3041,7 +3073,7 @@ function Dashboard() {
                 }));
               }}
             />
-          </label>
+          </div>
 
           <div className="user-chip">
             <strong>{getFirstName(user.name)}</strong>

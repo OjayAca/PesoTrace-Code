@@ -1,35 +1,70 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 export const AUTH_EXPIRED_EVENT = "pesotrace:auth-expired";
+const API_REQUEST_TIMEOUT_MS = 12000;
 
-let authToken = localStorage.getItem("pesotrace-token");
+function readStoredToken() {
+  try {
+    return localStorage.getItem("pesotrace-token");
+  } catch {
+    return null;
+  }
+}
+
+let authToken = readStoredToken();
 
 function setToken(token) {
   authToken = token;
 
-  if (token) {
-    localStorage.setItem("pesotrace-token", token);
-    return;
-  }
+  try {
+    if (token) {
+      localStorage.setItem("pesotrace-token", token);
+      return;
+    }
 
-  localStorage.removeItem("pesotrace-token");
+    localStorage.removeItem("pesotrace-token");
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 async function request(path, options = {}) {
+  const { headers: customHeaders = {}, timeoutMs, ...fetchOptions } = options;
   const headers = {
     "Content-Type": "application/json",
-    ...(options.headers || {}),
+    ...customHeaders,
   };
+  const controller = new AbortController();
+  const requestTimeoutMs = Number(timeoutMs || API_REQUEST_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
 
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let response;
 
-  const data = await response.json().catch(() => ({}));
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(
+        "The request timed out. Check your connection or the API server.",
+      );
+    }
+
+    throw new Error(
+      error?.message || "Unable to reach the API. Make sure the server is running.",
+    );
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const data =
+    response.status === 204 ? {} : await response.json().catch(() => ({}));
 
   if (
     response.status === 401 &&
@@ -42,7 +77,7 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed.");
+    throw new Error(data.message || response.statusText || "Request failed.");
   }
 
   return data;

@@ -15,6 +15,30 @@ import { TransactionsView } from "./views/TransactionsView";
 import { ReportsView } from "./views/ReportsView";
 import { SettingsView } from "./views/SettingsView";
 
+function readStorageValue(key, fallback = "") {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorageValue(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function removeStorageValue(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 export function Dashboard() {
   const { user, logout, setCurrentUser } = useAuth();
   const { theme, setTheme } = useTheme(user);
@@ -43,14 +67,14 @@ export function Dashboard() {
       return "";
     }
 
-    return localStorage.getItem(LAST_EXPORT_STORAGE_KEY) || "";
+    return readStorageValue(LAST_EXPORT_STORAGE_KEY);
   });
   const [checklistDismissed, setChecklistDismissed] = useState(() => {
     if (typeof window === "undefined") {
       return false;
     }
 
-    return localStorage.getItem(ONBOARDING_DISMISS_STORAGE_KEY) === "true";
+    return readStorageValue(ONBOARDING_DISMISS_STORAGE_KEY) === "true";
   });
   const [budgetAmount, setBudgetAmount] = useState("");
   const [budgetTopUpAmount, setBudgetTopUpAmount] = useState("");
@@ -267,7 +291,7 @@ export function Dashboard() {
       return;
     }
 
-    localStorage.setItem(TRANSACTION_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    writeStorageValue(TRANSACTION_FILTERS_STORAGE_KEY, JSON.stringify(filters));
   }, [filters]);
 
   useEffect(() => {
@@ -558,7 +582,7 @@ export function Dashboard() {
   function dismissOnboardingChecklist() {
     setChecklistDismissed(true);
     if (typeof window !== "undefined") {
-      localStorage.setItem(ONBOARDING_DISMISS_STORAGE_KEY, "true");
+      writeStorageValue(ONBOARDING_DISMISS_STORAGE_KEY, "true");
     }
   }
 
@@ -899,7 +923,7 @@ export function Dashboard() {
       const exportedAt = payload.exportedAt || new Date().toISOString();
       setLastExportedAt(exportedAt);
       if (typeof window !== "undefined") {
-        localStorage.setItem(LAST_EXPORT_STORAGE_KEY, exportedAt);
+        writeStorageValue(LAST_EXPORT_STORAGE_KEY, exportedAt);
       }
       pushFlash("success", "Data export downloaded.");
     } catch (exportError) {
@@ -959,12 +983,14 @@ export function Dashboard() {
           resetTransactionForm();
           resetRecurringForm();
           clearTransactionFilters();
+          setBudgetAmount("");
+          setBudgetTopUpAmount("");
           setLastExportedAt("");
           setChecklistDismissed(false);
           if (typeof window !== "undefined") {
-            localStorage.removeItem(TRANSACTION_FILTERS_STORAGE_KEY);
-            localStorage.removeItem(LAST_EXPORT_STORAGE_KEY);
-            localStorage.removeItem(ONBOARDING_DISMISS_STORAGE_KEY);
+            removeStorageValue(TRANSACTION_FILTERS_STORAGE_KEY);
+            removeStorageValue(LAST_EXPORT_STORAGE_KEY);
+            removeStorageValue(ONBOARDING_DISMISS_STORAGE_KEY);
           }
           await reloadAfterMutation("All finance data cleared.");
         } catch (clearError) {

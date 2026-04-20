@@ -35,15 +35,22 @@ function listen(app, port) {
   });
 }
 
-async function createRuntimeStore() {
+export async function createRuntimeStore(env = process.env) {
+  if (env.NODE_ENV !== "production" && env.MYSQL_STORE !== "true") {
+    const seedData = await loadBundledSnapshot();
+    const memoryStore = createMemoryStore(seedData);
+    await memoryStore.init();
+    return memoryStore;
+  }
+
   let mysqlStore;
 
   try {
-    mysqlStore = createStoreFromEnv(process.env);
+    mysqlStore = createStoreFromEnv(env);
     await mysqlStore.init();
     return mysqlStore;
   } catch (error) {
-    if (process.env.NODE_ENV === "production") {
+    if (env.NODE_ENV === "production") {
       throw error;
     }
 
@@ -63,7 +70,7 @@ async function createRuntimeStore() {
 }
 
 export async function startServer() {
-  const store = await createRuntimeStore();
+  const store = await createRuntimeStore(process.env);
   const app = createApp({
     store,
     clientOrigin: CLIENT_ORIGIN,

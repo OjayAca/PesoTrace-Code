@@ -363,6 +363,7 @@ export function createMySqlStore(env = process.env) {
               waitForConnections: true,
               connectionLimit: Number(env.MYSQL_CONNECTION_LIMIT || 10),
               queueLimit: 0,
+              connectTimeout: Number(env.MYSQL_CONNECT_TIMEOUT || 5000),
               timezone: "Z",
               dateStrings: true,
             })
@@ -371,6 +372,7 @@ export function createMySqlStore(env = process.env) {
               waitForConnections: true,
               connectionLimit: Number(env.MYSQL_CONNECTION_LIMIT || 10),
               queueLimit: 0,
+              connectTimeout: Number(env.MYSQL_CONNECT_TIMEOUT || 5000),
               timezone: "Z",
               dateStrings: true,
             }),

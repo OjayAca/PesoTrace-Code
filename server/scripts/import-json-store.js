@@ -24,12 +24,12 @@ function getSnapshotCounts(snapshot) {
   };
 }
 
-async function main() {
-  const inputPath = process.argv[2]
-    ? path.resolve(process.cwd(), process.argv[2])
-    : defaultJsonPath;
+export async function importJsonStore({
+  inputPath = defaultJsonPath,
+  env = process.env,
+} = {}) {
   const source = await readJsonStore(inputPath);
-  const store = createStoreFromEnv(process.env);
+  const store = createStoreFromEnv(env);
 
   await store.init();
 
@@ -62,12 +62,23 @@ async function main() {
     console.log(
       `Imported JSON store from ${inputPath}: ${JSON.stringify(getSnapshotCounts(source))}`,
     );
+    return getSnapshotCounts(source);
   } finally {
     await store.close();
   }
 }
 
-main().catch((error) => {
-  console.error("Failed to import JSON store into MySQL.", error);
-  process.exit(1);
-});
+async function main() {
+  const inputPath = process.argv[2]
+    ? path.resolve(process.cwd(), process.argv[2])
+    : defaultJsonPath;
+
+  await importJsonStore({ inputPath, env: process.env });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((error) => {
+    console.error("Failed to import JSON store into MySQL.", error);
+    process.exit(1);
+  });
+}

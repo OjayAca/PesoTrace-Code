@@ -572,6 +572,54 @@ test("budget top-ups add to the current month budget", async (t) => {
   assert.equal(dashboardResponse.data.summary.statusAmount, 4000);
 });
 
+test("budget set rejects overwriting an existing monthly budget", async (t) => {
+  const user = {
+    id: "user-budget-lock",
+    name: "Budget Lock User",
+    email: "budget-lock@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+    preferences: {
+      preferredTheme: "light",
+      defaultBudget: null,
+      currency: "PHP",
+    },
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    budgets: [
+      {
+        id: "budget-lock",
+        userId: "user-budget-lock",
+        month: "2026-04",
+        amount: 5000,
+        createdAt: "2026-04-10T00:00:00.000Z",
+        updatedAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const response = await request("/api/budgets/2026-04", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      amount: 6000,
+      mode: "set",
+    }),
+  });
+
+  assert.equal(response.response.status, 409);
+  assert.equal(
+    response.data.message,
+    "This month's budget is already set. Use Add to budget to increase it.",
+  );
+});
+
 test("transactions support category and type filters", async (t) => {
   const user = {
     id: "user-1",

@@ -23,6 +23,7 @@ export function TransactionsView({
   setBudgetAmount,
   handleBudgetSubmit,
   savingBudget,
+  monthlyBudgetLocked,
   budgetTopUpAmount,
   setBudgetTopUpAmount,
   handleBudgetTopUp,
@@ -496,7 +497,11 @@ export function TransactionsView({
             <label>
               <div className="field-label">
                 <span>Monthly budget</span>
-                <small>Saving replaces the budget for this month.</small>
+                <small>
+                  {monthlyBudgetLocked
+                    ? "This month already has a saved budget. Use Add to budget to increase it."
+                    : "Saving will set the budget once for this month."}
+                </small>
               </div>
               <input
                 type="number"
@@ -505,11 +510,16 @@ export function TransactionsView({
                 value={budgetAmount}
                 onChange={(event) => setBudgetAmount(event.target.value)}
                 placeholder="Enter monthly budget"
+                disabled={monthlyBudgetLocked}
                 required
               />
             </label>
-            <button className="primary-button" type="submit" disabled={savingBudget}>
-              {savingBudget ? "Saving..." : "Save budget"}
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={savingBudget || monthlyBudgetLocked}
+            >
+              {savingBudget ? "Saving..." : monthlyBudgetLocked ? "Budget locked" : "Save budget"}
             </button>
           </form>
 

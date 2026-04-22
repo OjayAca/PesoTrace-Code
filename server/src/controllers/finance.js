@@ -134,12 +134,20 @@ export function upsertBudget(store) {
           : toAmount(req.body.amount, "Budget", { allowZero: true });
       const now = new Date().toISOString();
       const snapshot = await store.getSnapshot();
+      const existingBudget =
+        snapshot.budgets.find(
+          (budget) => budget.userId === req.auth.userId && budget.month === month,
+        ) || null;
       let nextAmount = amount;
 
       if (mode === "add") {
         const currentSummary = getMonthlySummary(req.auth.userId, month, snapshot);
         const currentBudget = currentSummary.budget === null ? 0 : Number(currentSummary.budget);
         nextAmount = Math.round((currentBudget + amount) * 100) / 100;
+      } else if (existingBudget) {
+        return res.status(409).json({
+          message: "This month's budget is already set. Use Add to budget to increase it.",
+        });
       }
 
       await store.upsertBudget({

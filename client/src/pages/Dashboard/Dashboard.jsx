@@ -372,6 +372,7 @@ export function Dashboard() {
     dashboard?.budget === null || dashboard?.budget === undefined
       ? null
       : Number(dashboard.budget);
+  const monthlyBudgetLocked = dashboard?.budgetSource === "month";
   const budgetRemaining =
     budgetValue === null ? null : roundMoney(budgetValue - totalExpenses);
   const isOverBudget = budgetRemaining !== null && budgetRemaining < 0;
@@ -1171,6 +1172,7 @@ export function Dashboard() {
                 setBudgetAmount={setBudgetAmount}
                 handleBudgetSubmit={handleBudgetSubmit}
                 savingBudget={savingBudget}
+                monthlyBudgetLocked={monthlyBudgetLocked}
                 budgetTopUpAmount={budgetTopUpAmount}
                 setBudgetTopUpAmount={setBudgetTopUpAmount}
                 handleBudgetTopUp={handleBudgetTopUp}

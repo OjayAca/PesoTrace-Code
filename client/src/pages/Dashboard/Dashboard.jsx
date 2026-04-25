@@ -7,37 +7,15 @@ import { Routes, Route, useNavigate, useLocation, NavLink, Navigate } from "reac
 import { FALLBACK_CATEGORIES, TABS, TRANSACTION_FILTERS_STORAGE_KEY, ONBOARDING_DISMISS_STORAGE_KEY, LAST_EXPORT_STORAGE_KEY, DEFAULT_TRANSACTION_FILTERS } from "../../utils/constants";
 import { formatCurrency, formatDate, formatMonthLabel, roundMoney, downloadJson, downloadText, escapeCsv, formatDateTime } from "../../utils/formatters";
 import { getCurrentMonth, loadStoredTransactionFilters, buildTransactionFormFromSource, getStatusMeta } from "../../utils/helpers";
+import { readStorageValue, writeStorageValue, removeStorageValue } from "../../utils/storage";
 import { useTheme } from "../../hooks/useTheme";
 
 import { ConfirmationModal } from "../../components/Common/ConfirmationModal";
+import { getBudgetSubmissionDetails, loadDashboardMutationData, loadDashboardSupportData, loadDashboardTransactions, loadDashboardWorkspace } from "./dashboardApi";
 import { MainDashboard } from "./views/MainDashboard";
 import { TransactionsView } from "./views/TransactionsView";
 import { ReportsView } from "./views/ReportsView";
 import { SettingsView } from "./views/SettingsView";
-
-function readStorageValue(key, fallback = "") {
-  try {
-    return localStorage.getItem(key) || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStorageValue(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function removeStorageValue(key) {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Ignore storage failures.
-  }
-}
 
 export function Dashboard() {
   const { user, logout, setCurrentUser } = useAuth();
@@ -183,9 +161,9 @@ export function Dashboard() {
     }
   }
 
-  async function loadSettingsData() {
-    const response = await api.getSettings();
+  function applySupportData(response, templates) {
     setSettingsData(response);
+    setRecurringTemplates(templates);
     setCurrentUser(response.user);
     setProfileForm({
       name: response.user.name,
@@ -201,9 +179,9 @@ export function Dashboard() {
     });
   }
 
-  async function loadRecurringTemplates() {
-    const response = await api.getRecurringTemplates();
-    setRecurringTemplates(response.templates || []);
+  async function loadSupportData() {
+    const { settings, recurringTemplates: templates } = await loadDashboardSupportData(api);
+    applySupportData(settings, templates);
   }
 
   async function loadWorkspaceData(month) {
@@ -212,23 +190,16 @@ export function Dashboard() {
     setError("");
 
     try {
-      const [dashboardResponse, reportResponse] = await Promise.all([
-        api.getDashboard(month),
-        api.getReports(month),
-      ]);
+      const workspace = await loadDashboardWorkspace(api, month);
 
       if (loadIdRef.current !== requestId) {
         return;
       }
 
-      setDashboard(dashboardResponse.summary);
-      setReports(reportResponse);
-      setBudgetAmount(
-        dashboardResponse.summary.budget === null
-          ? ""
-          : String(dashboardResponse.summary.budget),
-      );
-      setBudgetTopUpAmount("");
+      setDashboard(workspace.summary);
+      setReports(workspace.reports);
+      setBudgetAmount(workspace.budgetAmount);
+      setBudgetTopUpAmount(workspace.budgetTopUpAmount);
     } catch (loadError) {
       if (loadIdRef.current === requestId) {
         setError(loadError.message);
@@ -244,18 +215,7 @@ export function Dashboard() {
     setLoadingTransactions(true);
 
     try {
-      const response = await api.getTransactions({
-        month,
-        type: nextFilters.type,
-        category: nextFilters.category,
-        query: nextFilters.query,
-        startDate: nextFilters.startDate,
-        endDate: nextFilters.endDate,
-        sortBy: nextFilters.sortBy,
-        sortOrder: nextFilters.sortOrder,
-        includeRecurring: "true",
-      });
-      setTransactions(response.transactions || []);
+      setTransactions(await loadDashboardTransactions(api, month, nextFilters));
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -265,8 +225,7 @@ export function Dashboard() {
 
   useEffect(() => {
     loadMeta();
-    loadSettingsData().catch((loadError) => setError(loadError.message));
-    loadRecurringTemplates().catch((loadError) => setError(loadError.message));
+    loadSupportData().catch((loadError) => setError(loadError.message));
   }, []);
 
   useEffect(() => {
@@ -372,7 +331,7 @@ export function Dashboard() {
     dashboard?.budget === null || dashboard?.budget === undefined
       ? null
       : Number(dashboard.budget);
-  const monthlyBudgetLocked = dashboard?.budgetSource === "month";
+  const monthlyBudgetLocked = budgetValue !== null;
   const budgetRemaining =
     budgetValue === null ? null : roundMoney(budgetValue - totalExpenses);
   const isOverBudget = budgetRemaining !== null && budgetRemaining < 0;
@@ -588,12 +547,13 @@ export function Dashboard() {
   }
 
   async function reloadAfterMutation(message) {
-    await Promise.all([
-      loadWorkspaceData(selectedMonth),
-      loadFilteredTransactions(selectedMonth, filters),
-      loadRecurringTemplates(),
-      loadSettingsData(),
-    ]);
+    const data = await loadDashboardMutationData(api, selectedMonth, filters);
+    setDashboard(data.summary);
+    setReports(data.reports);
+    setBudgetAmount(data.budgetAmount);
+    setBudgetTopUpAmount(data.budgetTopUpAmount);
+    setTransactions(data.transactions);
+    applySupportData(data.settings, data.recurringTemplates);
     pushFlash("success", message);
   }
 
@@ -619,7 +579,8 @@ export function Dashboard() {
 
   async function handleBudgetSubmit(event) {
     event.preventDefault();
-    await submitBudgetChange("set", budgetAmount, `Budget saved for ${monthLabel}.`);
+    const submission = getBudgetSubmissionDetails(dashboard, monthLabel);
+    await submitBudgetChange(submission.mode, budgetAmount, submission.successMessage);
   }
 
   async function handleBudgetTopUp(event) {
@@ -757,14 +718,7 @@ export function Dashboard() {
       }
 
       resetRecurringForm();
-      await Promise.all([
-        loadRecurringTemplates(),
-        loadWorkspaceData(selectedMonth),
-        loadFilteredTransactions(selectedMonth, filters),
-        loadSettingsData(),
-      ]);
-      pushFlash(
-        "success",
+      await reloadAfterMutation(
         recurringForm.id ? "Recurring template updated." : "Recurring template created.",
       );
     } catch (recurringError) {
@@ -804,13 +758,7 @@ export function Dashboard() {
           if (recurringForm.id === id) {
             resetRecurringForm();
           }
-          await Promise.all([
-            loadRecurringTemplates(),
-            loadWorkspaceData(selectedMonth),
-            loadFilteredTransactions(selectedMonth, filters),
-            loadSettingsData(),
-          ]);
-          pushFlash("success", "Recurring template deleted.");
+          await reloadAfterMutation("Recurring template deleted.");
         } catch (deleteError) {
           setError(deleteError.message);
         }
@@ -1011,7 +959,12 @@ export function Dashboard() {
       tone: "accent",
       icon: LogOut,
       onConfirm: async () => {
-        logout();
+        try {
+          await logout();
+        } catch (logoutError) {
+          setError(logoutError.message);
+          throw logoutError;
+        }
       },
     });
   }

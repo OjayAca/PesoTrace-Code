@@ -1,31 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000/api";
 export const AUTH_EXPIRED_EVENT = "pesotrace:auth-expired";
 const API_REQUEST_TIMEOUT_MS = 12000;
-
-function readStoredToken() {
-  try {
-    return localStorage.getItem("pesotrace-token");
-  } catch {
-    return null;
-  }
-}
-
-let authToken = readStoredToken();
-
-function setToken(token) {
-  authToken = token;
-
-  try {
-    if (token) {
-      localStorage.setItem("pesotrace-token", token);
-      return;
-    }
-
-    localStorage.removeItem("pesotrace-token");
-  } catch {
-    // Ignore storage failures.
-  }
-}
 
 async function request(path, options = {}) {
   const { headers: customHeaders = {}, timeoutMs, ...fetchOptions } = options;
@@ -37,16 +12,13 @@ async function request(path, options = {}) {
   const requestTimeoutMs = Number(timeoutMs || API_REQUEST_TIMEOUT_MS);
   const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
 
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-
   let response;
 
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...fetchOptions,
       headers,
+      credentials: "include",
       signal: controller.signal,
     });
   } catch (error) {
@@ -68,16 +40,18 @@ async function request(path, options = {}) {
 
   if (
     response.status === 401 &&
-    authToken &&
     !path.startsWith("/auth/login") &&
-    !path.startsWith("/auth/register")
+    !path.startsWith("/auth/register") &&
+    !path.startsWith("/auth/me") &&
+    !path.startsWith("/auth/logout")
   ) {
-    setToken(null);
     window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
   }
 
   if (!response.ok) {
-    throw new Error(data.message || response.statusText || "Request failed.");
+    const error = new Error(data.message || response.statusText || "Request failed.");
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -99,10 +73,6 @@ function toQueryString(params = {}) {
 }
 
 export const api = {
-  setToken,
-  getStoredToken() {
-    return authToken;
-  },
   getMeta() {
     return request("/meta");
   },
@@ -120,6 +90,18 @@ export const api = {
   },
   me() {
     return request("/auth/me");
+  },
+  logout() {
+    return request("/auth/logout", {
+      method: "POST",
+    }).catch((error) => {
+      if (error?.status === 401) {
+        window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+        return { success: true };
+      }
+
+      throw error;
+    });
   },
   getDashboard(month) {
     return request(`/dashboard?month=${encodeURIComponent(month)}`);

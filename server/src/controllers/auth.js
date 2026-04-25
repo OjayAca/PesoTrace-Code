@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
-import { createToken } from "../auth.js";
+import { clearAuthCookie, createToken, setAuthCookie } from "../auth.js";
 import { isValidEmail, sanitizeUser, isDuplicateEntryError } from "../utils/helpers.js";
 
 export function register(store) {
@@ -43,9 +43,9 @@ export function register(store) {
       });
 
       const publicUser = sanitizeUser(user);
+      setAuthCookie(req, res, createToken(publicUser));
       return res.status(201).json({
         user: publicUser,
-        token: createToken(publicUser),
       });
     } catch (error) {
       if (isDuplicateEntryError(error)) {
@@ -80,9 +80,9 @@ export function login(store) {
       }
 
       const publicUser = sanitizeUser(user);
+      setAuthCookie(req, res, createToken(publicUser));
       return res.json({
         user: publicUser,
-        token: createToken(publicUser),
       });
     } catch {
       return res.status(500).json({ message: "Failed to log in." });
@@ -99,5 +99,12 @@ export function me(store) {
     }
 
     return res.json({ user: sanitizeUser(user) });
+  };
+}
+
+export function logout() {
+  return (req, res) => {
+    clearAuthCookie(req, res);
+    return res.json({ success: true });
   };
 }

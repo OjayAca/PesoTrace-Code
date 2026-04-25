@@ -1,3 +1,15 @@
+import {
+  getUserTransactions as getComputedUserTransactions,
+  getRecurringTemplates as getComputedRecurringTemplates,
+  getMonthlySummary as getComputedMonthlySummary,
+  getReports as getComputedReports,
+  normalizeCategory,
+  normalizeDate,
+  normalizeMonth,
+  normalizeSortOrder,
+  normalizeTransactionType,
+} from "./finance.js";
+
 const DEFAULT_DATA = {
   users: [],
   transactions: [],
@@ -16,6 +28,188 @@ function toNumberOrNull(value) {
 
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : null;
+}
+
+function roundCurrency(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function createDuplicateEntryError(message) {
+  const error = new Error(message);
+  error.code = "ER_DUP_ENTRY";
+  return error;
+}
+
+function createForeignKeyError(message) {
+  const error = new Error(message);
+  error.code = "ER_NO_REFERENCED_ROW_2";
+  return error;
+}
+
+function createBudgetConflictError(message) {
+  const error = new Error(message);
+  error.code = "BUDGET_EXISTS";
+  return error;
+}
+
+function ensureUserExists(data, userId) {
+  const user = data.users.find((entry) => entry.id === userId) || null;
+
+  if (!user) {
+    throw createForeignKeyError("User account no longer exists.");
+  }
+
+  return user;
+}
+
+function ensureUniqueUserEmail(data, email, currentUserId = "") {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const existingUser =
+    data.users.find(
+      (entry) => entry.email === normalizedEmail && entry.id !== currentUserId,
+    ) || null;
+
+  if (existingUser) {
+    throw createDuplicateEntryError("That email is already registered.");
+  }
+
+  return normalizedEmail;
+}
+
+function createUserScopedSnapshot(data, userId) {
+  const user = data.users.find((entry) => entry.id === userId) || null;
+
+  return normalizeStoreData({
+    users: user ? [user] : [],
+    transactions: data.transactions.filter((entry) => entry.userId === userId),
+    budgets: data.budgets.filter((entry) => entry.userId === userId),
+    recurringTemplates: data.recurringTemplates.filter((entry) => entry.userId === userId),
+  });
+}
+
+function getMonthDateRange(month) {
+  if (!month) {
+    return {
+      startDate: "",
+      endDate: "",
+    };
+  }
+
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+
+  return {
+    startDate: `${month}-01`,
+    endDate: `${month}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function getMonthLabel(month) {
+  return new Date(`${month}-01T00:00:00`).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+  });
+}
+
+function getReportMonths(month, count) {
+  const months = [];
+
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const cursor = new Date(`${month}-01T00:00:00`);
+    cursor.setMonth(cursor.getMonth() - index);
+    months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+  }
+
+  return months;
+}
+
+function buildMonthlySummary(month, totals = {}, budgetInfo = {}) {
+  const roundedIncome = roundCurrency(totals.totalIncome);
+  const roundedExpenses = roundCurrency(totals.totalExpenses);
+  const budget =
+    budgetInfo.amount === null || budgetInfo.amount === undefined
+      ? null
+      : roundCurrency(budgetInfo.amount);
+  const summary = {
+    month,
+    totalExpenses: roundedExpenses,
+    totalIncome: roundedIncome,
+    netBalance: roundCurrency(roundedIncome - roundedExpenses),
+    budget,
+    budgetSource: budgetInfo.source || "unset",
+    transactionCount: Number(totals.transactionCount || 0),
+    statusType: "unset",
+    statusAmount: null,
+  };
+
+  if (budget !== null) {
+    const statusAmount = roundCurrency(budget - roundedExpenses);
+    summary.statusAmount = statusAmount;
+
+    if (statusAmount > 0) {
+      summary.statusType = "remaining";
+    } else if (statusAmount < 0) {
+      summary.statusType = "deficit";
+    } else {
+      summary.statusType = "exact";
+    }
+  }
+
+  return summary;
+}
+
+function normalizeReportEntryFromRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  const entry = {
+    id: String(row.id || ""),
+    userId: String(row.userId || ""),
+    title: String(row.title || "").trim(),
+    notes: String(row.notes || ""),
+    amount: roundCurrency(row.amount),
+    type: row.type === "income" ? "income" : "expense",
+    category: String(row.category || "Other").trim() || "Other",
+    transactionDate: String(row.transactionDate || "").slice(0, 10),
+    createdAt: toIsoDateTime(row.createdAt),
+    updatedAt: toIsoDateTime(row.updatedAt),
+  };
+
+  if (row.sourceId) {
+    entry.sourceId = String(row.sourceId);
+  }
+
+  if (Number(row.isRecurring || 0) === 1 || row.isRecurring === true) {
+    entry.isRecurring = true;
+    entry.repeat = "monthly";
+  }
+
+  return entry;
+}
+
+function normalizeTransactionFilters(filters = {}) {
+  const month = filters.month ? normalizeMonth(filters.month) : "";
+  const type = filters.type ? normalizeTransactionType(filters.type) : "";
+  const category = filters.category ? normalizeCategory(filters.category) : "";
+  const query = String(filters.query || "").trim();
+  const startDate = filters.startDate ? normalizeDate(filters.startDate) : "";
+  const endDate = filters.endDate ? normalizeDate(filters.endDate) : "";
+  const sortBy = String(filters.sortBy || "date").trim().toLowerCase() || "date";
+  const sortOrder = normalizeSortOrder(filters.sortOrder || "desc");
+  const includeRecurring = filters.includeRecurring !== false;
+
+  return {
+    month,
+    type,
+    category,
+    query,
+    startDate,
+    endDate,
+    sortBy,
+    sortOrder,
+    includeRecurring,
+  };
 }
 
 function toIsoDateTime(value) {
@@ -161,6 +355,23 @@ function normalizeRecurringTemplateFromRow(row) {
   return normalizeRecurringTemplate(row);
 }
 
+function normalizeUserOverviewFromRow(row) {
+  const user = normalizeUserFromRow(row);
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    user,
+    stats: {
+      transactionCount: Number(row.transactionCount || 0),
+      budgetCount: Number(row.budgetCount || 0),
+      recurringCount: Number(row.recurringCount || 0),
+    },
+  };
+}
+
 function getConnectionOptions(env = process.env) {
   const url = env.MYSQL_URL || env.DATABASE_URL || "";
 
@@ -198,6 +409,16 @@ export function createMemoryStore(seedData = {}) {
   return {
     async init() {},
     async close() {},
+    async runInTransaction(work) {
+      const snapshot = clone(data);
+
+      try {
+        return await work();
+      } catch (error) {
+        data = normalizeStoreData(snapshot);
+        throw error;
+      }
+    },
     async getSnapshot() {
       return createSnapshot(data);
     },
@@ -212,6 +433,8 @@ export function createMemoryStore(seedData = {}) {
     },
     async createUser(user) {
       const nextUser = normalizeUser(user);
+
+      ensureUniqueUserEmail(data, nextUser.email);
       data.users.push(nextUser);
       return normalizeUser(clone(nextUser));
     },
@@ -222,8 +445,9 @@ export function createMemoryStore(seedData = {}) {
         return null;
       }
 
+      const nextEmail = ensureUniqueUserEmail(data, profile.email, id);
       user.name = String(profile.name || "").trim();
-      user.email = String(profile.email || "").trim().toLowerCase();
+      user.email = nextEmail;
       return normalizeUser(clone(user));
     },
     async updateUserPreferences(id, preferences) {
@@ -253,6 +477,8 @@ export function createMemoryStore(seedData = {}) {
     },
     async createTransaction(transaction) {
       const nextTransaction = normalizeTransaction(transaction);
+
+      ensureUserExists(data, nextTransaction.userId);
       data.transactions.push(nextTransaction);
       return normalizeTransaction(clone(nextTransaction));
     },
@@ -290,6 +516,8 @@ export function createMemoryStore(seedData = {}) {
           (entry) => entry.userId === budget.userId && entry.month === budget.month,
         ) || null;
 
+      ensureUserExists(data, budget.userId);
+
       if (existing) {
         existing.amount = Number(budget.amount);
         existing.updatedAt = toIsoDateTime(budget.updatedAt);
@@ -314,6 +542,8 @@ export function createMemoryStore(seedData = {}) {
     },
     async createRecurringTemplate(template) {
       const nextTemplate = normalizeRecurringTemplate(template);
+
+      ensureUserExists(data, nextTemplate.userId);
       data.recurringTemplates.push(nextTemplate);
       return normalizeRecurringTemplate(clone(nextTemplate));
     },
@@ -346,6 +576,93 @@ export function createMemoryStore(seedData = {}) {
 
       data.recurringTemplates.splice(index, 1);
       return true;
+    },
+    async getUserOverview(userId) {
+      const user = data.users.find((entry) => entry.id === userId) || null;
+
+      if (!user) {
+        return null;
+      }
+
+      return {
+        user: normalizeUser(clone(user)),
+        stats: {
+          transactionCount: data.transactions.filter((entry) => entry.userId === userId).length,
+          budgetCount: data.budgets.filter((entry) => entry.userId === userId).length,
+          recurringCount: data.recurringTemplates.filter((entry) => entry.userId === userId).length,
+        },
+      };
+    },
+    async getUserFinanceSnapshot(userId) {
+      return createUserScopedSnapshot(data, userId);
+    },
+    async listUserTransactions(userId, filters = {}) {
+      const snapshot = createUserScopedSnapshot(data, userId);
+      return getComputedUserTransactions(userId, normalizeTransactionFilters(filters), snapshot);
+    },
+    async getUserRecurringTemplates(userId) {
+      const snapshot = createUserScopedSnapshot(data, userId);
+      return getComputedRecurringTemplates(userId, snapshot);
+    },
+    async getMonthlySummary(userId, month) {
+      const snapshot = createUserScopedSnapshot(data, userId);
+      return getComputedMonthlySummary(userId, month, snapshot);
+    },
+    async getReports(userId, month, months = 6) {
+      const snapshot = createUserScopedSnapshot(data, userId);
+      return getComputedReports(userId, month, snapshot, months);
+    },
+    async saveBudget({ id, userId, month, amount, mode, createdAt, updatedAt }) {
+      const user = ensureUserExists(data, userId);
+      const normalizedAmount = roundCurrency(amount);
+      const existing =
+        data.budgets.find((entry) => entry.userId === userId && entry.month === month) || null;
+
+      if (mode === "set" && existing) {
+        throw createBudgetConflictError(
+          "This month's budget is already set. Use Edit budget to change it or Add to budget to increase it.",
+        );
+      }
+
+      if (mode === "add") {
+        const defaultBudget = toNumberOrNull(user.preferences?.defaultBudget);
+        const baseAmount = existing ? Number(existing.amount) : Number(defaultBudget || 0);
+        const nextAmount = roundCurrency(baseAmount + normalizedAmount);
+
+        if (existing) {
+          existing.amount = nextAmount;
+          existing.updatedAt = toIsoDateTime(updatedAt);
+          return normalizeBudget(clone(existing));
+        }
+
+        const nextBudget = normalizeBudget({
+          id,
+          userId,
+          month,
+          amount: nextAmount,
+          createdAt,
+          updatedAt,
+        });
+        data.budgets.push(nextBudget);
+        return normalizeBudget(clone(nextBudget));
+      }
+
+      if (existing) {
+        existing.amount = normalizedAmount;
+        existing.updatedAt = toIsoDateTime(updatedAt);
+        return normalizeBudget(clone(existing));
+      }
+
+      const nextBudget = normalizeBudget({
+        id,
+        userId,
+        month,
+        amount: normalizedAmount,
+        createdAt,
+        updatedAt,
+      });
+      data.budgets.push(nextBudget);
+      return normalizeBudget(clone(nextBudget));
     },
   };
 }
@@ -388,6 +705,28 @@ export function createMySqlStore(env = process.env) {
     return rows[0] ? mapper(rows[0]) : null;
   }
 
+  async function getOneWithExecutor(executor, sql, values = [], mapper = (row) => row) {
+    const [rows] = await executor.execute(sql, values);
+    return rows[0] ? mapper(rows[0]) : null;
+  }
+
+  async function runInTransaction(work) {
+    const pool = await getPool();
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+      const result = await work(connection);
+      await connection.commit();
+      return result;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
   async function getSnapshot() {
     const pool = await getPool();
     const [users, transactions, budgets, recurringTemplates] = await Promise.all([
@@ -426,6 +765,385 @@ export function createMySqlStore(env = process.env) {
     });
   }
 
+  async function getUserFinanceSnapshot(userId) {
+    const pool = await getPool();
+    const [users, transactions, budgets, recurringTemplates] = await Promise.all([
+      pool.query(
+        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
+                default_budget AS defaultBudget, currency, created_at AS createdAt
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT id, user_id AS userId, title, notes, amount, transaction_date AS transactionDate,
+                created_at AS createdAt, updated_at AS updatedAt, type, category
+         FROM transactions
+         WHERE user_id = ?
+         ORDER BY transaction_date DESC, updated_at DESC, id DESC`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM budgets
+         WHERE user_id = ?
+         ORDER BY month_key DESC, id DESC`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
+                type, category, created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM recurring_templates
+         WHERE user_id = ?
+         ORDER BY start_date ASC, id ASC`,
+        [userId],
+      ),
+    ]);
+
+    return normalizeStoreData({
+      users: users[0].map(normalizeUserFromRow),
+      transactions: transactions[0].map(normalizeTransactionFromRow),
+      budgets: budgets[0].map(normalizeBudgetFromRow),
+      recurringTemplates: recurringTemplates[0].map(normalizeRecurringTemplateFromRow),
+    });
+  }
+
+  async function listUserTransactions(userId, filters = {}) {
+    const normalizedFilters = normalizeTransactionFilters(filters);
+    const rangeFromMonth = getMonthDateRange(normalizedFilters.month);
+    const startDateCandidates = [
+      normalizedFilters.startDate,
+      rangeFromMonth.startDate,
+    ].filter(Boolean);
+    const endDateCandidates = [
+      normalizedFilters.endDate,
+      rangeFromMonth.endDate,
+    ].filter(Boolean);
+    const effectiveStartDate = startDateCandidates.length
+      ? startDateCandidates.sort()[startDateCandidates.length - 1]
+      : "";
+    const effectiveEndDate = endDateCandidates.length ? endDateCandidates.sort()[0] : "";
+    const conditions = ["user_id = ?"];
+    const values = [userId];
+
+    if (effectiveStartDate) {
+      conditions.push("transaction_date >= ?");
+      values.push(effectiveStartDate);
+    }
+
+    if (effectiveEndDate) {
+      conditions.push("transaction_date <= ?");
+      values.push(effectiveEndDate);
+    }
+
+    if (normalizedFilters.type) {
+      conditions.push("type = ?");
+      values.push(normalizedFilters.type);
+    }
+
+    if (normalizedFilters.category) {
+      conditions.push("category = ?");
+      values.push(normalizedFilters.category);
+    }
+
+    if (normalizedFilters.query) {
+      conditions.push("LOWER(CONCAT_WS(' ', title, notes, category, type)) LIKE ?");
+      values.push(`%${normalizedFilters.query.toLowerCase()}%`);
+    }
+
+    const sortColumns = {
+      amount: "amount",
+      title: "title",
+      date: "transaction_date",
+    };
+    const sortBy = sortColumns[normalizedFilters.sortBy] || "transaction_date";
+    const sortDirection = normalizedFilters.sortOrder === "asc" ? "ASC" : "DESC";
+    const pool = await getPool();
+    const [transactions, recurringTemplates] = await Promise.all([
+      pool.query(
+        `SELECT id, user_id AS userId, title, notes, amount, transaction_date AS transactionDate,
+                created_at AS createdAt, updated_at AS updatedAt, type, category
+         FROM transactions
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY ${sortBy} ${sortDirection}, updated_at ${sortDirection}, id ${sortDirection}`,
+        values,
+      ),
+      normalizedFilters.includeRecurring && normalizedFilters.month
+        ? pool.query(
+            `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
+                    type, category, created_at AS createdAt, updated_at AS updatedAt
+             FROM recurring_templates
+             WHERE user_id = ?
+               AND start_date <= LAST_DAY(CONCAT(?, '-01'))
+             ORDER BY start_date ASC, id ASC`,
+            [userId, normalizedFilters.month],
+          )
+        : Promise.resolve([[]]),
+    ]);
+
+    return getComputedUserTransactions(userId, normalizedFilters, {
+      users: [],
+      transactions: transactions[0].map(normalizeTransactionFromRow),
+      budgets: [],
+      recurringTemplates: recurringTemplates[0].map(normalizeRecurringTemplateFromRow),
+    });
+  }
+
+  async function getUserRecurringTemplates(userId) {
+    const pool = await getPool();
+    const [rows] = await pool.query(
+      `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
+              type, category, created_at AS createdAt, updated_at AS updatedAt
+       FROM recurring_templates
+       WHERE user_id = ?
+       ORDER BY start_date ASC, id ASC`,
+      [userId],
+    );
+
+    return getComputedRecurringTemplates(userId, {
+      users: [],
+      transactions: [],
+      budgets: [],
+      recurringTemplates: rows.map(normalizeRecurringTemplateFromRow),
+    });
+  }
+
+  async function getBudgetForMonth(userId, month, executor = null) {
+    const db = executor || (await getPool());
+    const row = await getOneWithExecutor(
+      db,
+      `SELECT
+         b.amount AS monthBudget,
+         u.default_budget AS defaultBudget
+       FROM users u
+       LEFT JOIN budgets b
+         ON b.user_id = u.id
+        AND b.month_key = ?
+       WHERE u.id = ?
+       LIMIT 1`,
+      [month, userId],
+    );
+
+    if (row?.monthBudget !== null && row?.monthBudget !== undefined) {
+      return {
+        amount: roundCurrency(row.monthBudget),
+        source: "month",
+      };
+    }
+
+    if (row?.defaultBudget !== null && row?.defaultBudget !== undefined) {
+      return {
+        amount: roundCurrency(row.defaultBudget),
+        source: "default",
+      };
+    }
+
+    return {
+      amount: null,
+      source: "unset",
+    };
+  }
+
+  async function getMonthlyTotals(userId, month, executor = null) {
+    const db = executor || (await getPool());
+    const { startDate, endDate } = getMonthDateRange(month);
+    const row = await getOneWithExecutor(
+      db,
+      `SELECT
+         COALESCE(SUM(CASE WHEN activity.type = 'income' THEN activity.amount ELSE 0 END), 0) AS totalIncome,
+         COALESCE(SUM(CASE WHEN activity.type = 'expense' THEN activity.amount ELSE 0 END), 0) AS totalExpenses,
+         COUNT(*) AS transactionCount
+       FROM (
+         SELECT amount, type
+         FROM transactions
+         WHERE user_id = ?
+           AND transaction_date >= ?
+           AND transaction_date <= ?
+         UNION ALL
+         SELECT amount, type
+         FROM recurring_templates
+         WHERE user_id = ?
+           AND start_date <= LAST_DAY(CONCAT(?, '-01'))
+       ) activity`,
+      [userId, startDate, endDate, userId, month],
+    );
+
+    return {
+      totalIncome: roundCurrency(row?.totalIncome),
+      totalExpenses: roundCurrency(row?.totalExpenses),
+      transactionCount: Number(row?.transactionCount || 0),
+    };
+  }
+
+  async function getMonthlySummary(userId, month, executor = null) {
+    const normalizedMonth = normalizeMonth(month);
+    const [totals, budgetInfo] = await Promise.all([
+      getMonthlyTotals(userId, normalizedMonth, executor),
+      getBudgetForMonth(userId, normalizedMonth, executor),
+    ]);
+
+    return buildMonthlySummary(normalizedMonth, totals, budgetInfo);
+  }
+
+  async function getCategoryBreakdown(userId, month) {
+    const pool = await getPool();
+    const { startDate, endDate } = getMonthDateRange(month);
+    const [rows] = await pool.execute(
+      `SELECT
+         activity.type AS type,
+         activity.category AS category,
+         ROUND(SUM(activity.amount), 2) AS amount
+       FROM (
+         SELECT amount, type, category
+         FROM transactions
+         WHERE user_id = ?
+           AND transaction_date >= ?
+           AND transaction_date <= ?
+         UNION ALL
+         SELECT amount, type, category
+         FROM recurring_templates
+         WHERE user_id = ?
+           AND start_date <= LAST_DAY(CONCAT(?, '-01'))
+       ) activity
+       GROUP BY activity.type, activity.category
+       ORDER BY amount DESC, activity.type ASC, activity.category ASC`,
+      [userId, startDate, endDate, userId, month],
+    );
+
+    return rows.map((row) => ({
+      type: row.type === "income" ? "income" : "expense",
+      category: String(row.category || "Other").trim() || "Other",
+      amount: roundCurrency(row.amount),
+    }));
+  }
+
+  async function getLargestReportEntry(userId, month, type) {
+    const pool = await getPool();
+    const { startDate, endDate } = getMonthDateRange(month);
+
+    return getOneWithExecutor(
+      pool,
+      `SELECT
+         activity.id,
+         activity.sourceId,
+         activity.userId,
+         activity.title,
+         activity.notes,
+         activity.amount,
+         activity.type,
+         activity.category,
+         activity.transactionDate,
+         activity.createdAt,
+         activity.updatedAt,
+         activity.isRecurring
+       FROM (
+         SELECT
+           t.id AS id,
+           NULL AS sourceId,
+           t.user_id AS userId,
+           t.title AS title,
+           t.notes AS notes,
+           t.amount AS amount,
+           t.type AS type,
+           t.category AS category,
+           t.transaction_date AS transactionDate,
+           t.created_at AS createdAt,
+           t.updated_at AS updatedAt,
+           0 AS isRecurring
+         FROM transactions t
+         WHERE t.user_id = ?
+           AND t.transaction_date >= ?
+           AND t.transaction_date <= ?
+         UNION ALL
+         SELECT
+           CONCAT('recurring:', rt.id, ':', ?) AS id,
+           rt.id AS sourceId,
+           rt.user_id AS userId,
+           rt.title AS title,
+           rt.notes AS notes,
+           rt.amount AS amount,
+           rt.type AS type,
+           rt.category AS category,
+           CONCAT(
+             ?,
+             '-',
+             LPAD(LEAST(DAY(rt.start_date), DAY(LAST_DAY(CONCAT(?, '-01')))), 2, '0')
+           ) AS transactionDate,
+           rt.created_at AS createdAt,
+           rt.updated_at AS updatedAt,
+           1 AS isRecurring
+         FROM recurring_templates rt
+         WHERE rt.user_id = ?
+           AND rt.start_date <= LAST_DAY(CONCAT(?, '-01'))
+       ) activity
+       WHERE activity.type = ?
+       ORDER BY activity.amount DESC, activity.transactionDate DESC, activity.updatedAt DESC, activity.id DESC
+       LIMIT 1`,
+      [userId, startDate, endDate, month, month, month, userId, month, type],
+      normalizeReportEntryFromRow,
+    );
+  }
+
+  async function getRecurringTemplateCount(userId) {
+    const pool = await getPool();
+    const row = await getOneWithExecutor(
+      pool,
+      `SELECT COUNT(*) AS recurringTemplateCount
+       FROM recurring_templates
+       WHERE user_id = ?`,
+      [userId],
+    );
+
+    return Number(row?.recurringTemplateCount || 0);
+  }
+
+  async function getReports(userId, month, months = 6) {
+    const normalizedMonth = normalizeMonth(month);
+    const safeMonths = Math.max(3, Math.min(Number(months) || 6, 12));
+    const trendMonths = getReportMonths(normalizedMonth, safeMonths);
+    const summaryPromise = getMonthlySummary(userId, normalizedMonth);
+    const [summary, categoryBreakdown, largestExpense, largestIncome, recurringTemplateCount] =
+      await Promise.all([
+        summaryPromise,
+        getCategoryBreakdown(userId, normalizedMonth),
+        getLargestReportEntry(userId, normalizedMonth, "expense"),
+        getLargestReportEntry(userId, normalizedMonth, "income"),
+        getRecurringTemplateCount(userId),
+      ]);
+    const monthlyTrend = await Promise.all(
+      trendMonths.map(async (trendMonth) => {
+        const trendSummary =
+          trendMonth === normalizedMonth
+            ? summary
+            : await getMonthlySummary(userId, trendMonth);
+
+        return {
+          month: trendMonth,
+          label: getMonthLabel(trendMonth),
+          totalExpenses: trendSummary.totalExpenses,
+          totalIncome: trendSummary.totalIncome,
+          netBalance: trendSummary.netBalance,
+          budget: trendSummary.budget,
+        };
+      }),
+    );
+
+    return {
+      summary,
+      monthlyTrend,
+      categoryBreakdown,
+      highlights: {
+        largestExpense,
+        largestIncome,
+        topExpenseCategory: categoryBreakdown.find((item) => item.type === "expense") || null,
+        recurringTemplateCount,
+      },
+    };
+  }
+
   return {
     async init() {
       const pool = await getPool();
@@ -440,7 +1158,13 @@ export function createMySqlStore(env = process.env) {
       const pool = await poolPromise;
       await pool.end();
     },
+    runInTransaction,
     getSnapshot,
+    getUserFinanceSnapshot,
+    listUserTransactions,
+    getUserRecurringTemplates,
+    getMonthlySummary,
+    getReports,
     async getUserById(id) {
       return getOne(
         `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
@@ -463,11 +1187,47 @@ export function createMySqlStore(env = process.env) {
         normalizeUserFromRow,
       );
     },
-    async createUser(user) {
-      const pool = await getPool();
+    async getUserOverview(id) {
+      return getOne(
+        `SELECT
+           u.id,
+           u.name,
+           u.email,
+           u.password_hash AS passwordHash,
+           u.preferred_theme AS preferredTheme,
+           u.default_budget AS defaultBudget,
+           u.currency,
+           u.created_at AS createdAt,
+           COALESCE(t.transactionCount, 0) AS transactionCount,
+           COALESCE(b.budgetCount, 0) AS budgetCount,
+           COALESCE(r.recurringCount, 0) AS recurringCount
+         FROM users u
+         LEFT JOIN (
+           SELECT user_id, COUNT(*) AS transactionCount
+           FROM transactions
+           GROUP BY user_id
+         ) t ON t.user_id = u.id
+         LEFT JOIN (
+           SELECT user_id, COUNT(*) AS budgetCount
+           FROM budgets
+           GROUP BY user_id
+         ) b ON b.user_id = u.id
+         LEFT JOIN (
+           SELECT user_id, COUNT(*) AS recurringCount
+           FROM recurring_templates
+           GROUP BY user_id
+         ) r ON r.user_id = u.id
+         WHERE u.id = ?
+         LIMIT 1`,
+        [id],
+        normalizeUserOverviewFromRow,
+      );
+    },
+    async createUser(user, connection = null) {
+      const db = connection || (await getPool());
       const normalizedUser = normalizeUser(user);
 
-      await pool.execute(
+      await db.execute(
         `INSERT INTO users (
            id, name, email, password_hash, preferred_theme, default_budget, currency, created_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -483,7 +1243,16 @@ export function createMySqlStore(env = process.env) {
         ],
       );
 
-      return this.getUserById(normalizedUser.id);
+      return getOneWithExecutor(
+        db,
+        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
+                default_budget AS defaultBudget, currency, created_at AS createdAt
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [normalizedUser.id],
+        normalizeUserFromRow,
+      );
     },
     async updateUserProfile(id, profile) {
       const pool = await getPool();
@@ -531,11 +1300,11 @@ export function createMySqlStore(env = process.env) {
 
       return result.affectedRows > 0;
     },
-    async createTransaction(transaction) {
-      const pool = await getPool();
+    async createTransaction(transaction, connection = null) {
+      const db = connection || (await getPool());
       const normalizedTransaction = normalizeTransaction(transaction);
 
-      await pool.execute(
+      await db.execute(
         `INSERT INTO transactions (
            id, user_id, title, notes, amount, transaction_date, type, category, created_at, updated_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -553,7 +1322,16 @@ export function createMySqlStore(env = process.env) {
         ],
       );
 
-      return this.findTransaction(normalizedTransaction.userId, normalizedTransaction.id);
+      return getOneWithExecutor(
+        db,
+        `SELECT id, user_id AS userId, title, notes, amount, transaction_date AS transactionDate,
+                created_at AS createdAt, updated_at AS updatedAt, type, category
+         FROM transactions
+         WHERE user_id = ? AND id = ?
+         LIMIT 1`,
+        [normalizedTransaction.userId, normalizedTransaction.id],
+        normalizeTransactionFromRow,
+      );
     },
     async findTransaction(userId, id) {
       return getOne(
@@ -607,33 +1385,133 @@ export function createMySqlStore(env = process.env) {
 
       return result.affectedRows > 0;
     },
-    async upsertBudget(budget) {
-      const pool = await getPool();
+    async upsertBudget(budget, connection = null) {
+      const db = connection || (await getPool());
       const normalizedBudget = normalizeBudget(budget);
-      const existing = await getOne(
-        `SELECT id
+      await db.execute(
+        `INSERT INTO budgets (id, user_id, month_key, amount, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           amount = VALUES(amount),
+           updated_at = VALUES(updated_at)`,
+        [
+          normalizedBudget.id,
+          normalizedBudget.userId,
+          normalizedBudget.month,
+          normalizedBudget.amount,
+          toMySqlDateTime(normalizedBudget.createdAt),
+          toMySqlDateTime(normalizedBudget.updatedAt),
+         ],
+      );
+
+      return getOneWithExecutor(
+        db,
+        `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
+                updated_at AS updatedAt
          FROM budgets
          WHERE user_id = ? AND month_key = ?
          LIMIT 1`,
         [normalizedBudget.userId, normalizedBudget.month],
+        normalizeBudgetFromRow,
       );
+    },
+    async saveBudget({ id, userId, month, amount, mode, createdAt, updatedAt }) {
+      const normalizedAmount = roundCurrency(amount);
 
-      if (existing) {
-        await pool.execute(
-          `UPDATE budgets
-           SET amount = ?, updated_at = ?
-           WHERE user_id = ? AND month_key = ?`,
-          [
-            normalizedBudget.amount,
-            toMySqlDateTime(normalizedBudget.updatedAt),
-            normalizedBudget.userId,
-            normalizedBudget.month,
-          ],
+      return runInTransaction(async (connection) => {
+        const user = await getOneWithExecutor(
+          connection,
+          `SELECT id, default_budget AS defaultBudget
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [userId],
+          (row) => ({
+            id: row.id,
+            defaultBudget: toNumberOrNull(row.defaultBudget),
+          }),
         );
-      } else {
-        await pool.execute(
+
+        if (!user) {
+          throw createForeignKeyError("User account no longer exists.");
+        }
+
+        const existing = await getOneWithExecutor(
+          connection,
+          `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
+                  updated_at AS updatedAt
+           FROM budgets
+           WHERE user_id = ? AND month_key = ?
+           LIMIT 1
+           FOR UPDATE`,
+          [userId, month],
+          normalizeBudgetFromRow,
+        );
+
+        if (mode === "set" && existing) {
+          throw createBudgetConflictError(
+            "This month's budget is already set. Use Edit budget to change it or Add to budget to increase it.",
+          );
+        }
+
+        if (mode === "add") {
+          const nextAmount = roundCurrency(
+            Number(existing?.amount ?? user.defaultBudget ?? 0) + normalizedAmount,
+          );
+
+          if (existing) {
+            await connection.execute(
+              `UPDATE budgets
+               SET amount = ?, updated_at = ?
+               WHERE user_id = ? AND month_key = ?`,
+              [nextAmount, toMySqlDateTime(updatedAt), userId, month],
+            );
+
+            return getOneWithExecutor(
+              connection,
+              `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
+                      updated_at AS updatedAt
+               FROM budgets
+               WHERE user_id = ? AND month_key = ?
+               LIMIT 1`,
+              [userId, month],
+              normalizeBudgetFromRow,
+            );
+          }
+
+          await connection.execute(
+            `INSERT INTO budgets (id, user_id, month_key, amount, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [id, userId, month, nextAmount, toMySqlDateTime(createdAt), toMySqlDateTime(updatedAt)],
+          );
+
+          return getOneWithExecutor(
+            connection,
+            `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
+                    updated_at AS updatedAt
+             FROM budgets
+             WHERE user_id = ? AND month_key = ?
+             LIMIT 1`,
+            [userId, month],
+            normalizeBudgetFromRow,
+          );
+        }
+
+        const normalizedBudget = normalizeBudget({
+          id,
+          userId,
+          month,
+          amount: normalizedAmount,
+          createdAt,
+          updatedAt,
+        });
+
+        await connection.execute(
           `INSERT INTO budgets (id, user_id, month_key, amount, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             amount = VALUES(amount),
+             updated_at = VALUES(updated_at)`,
           [
             normalizedBudget.id,
             normalizedBudget.userId,
@@ -643,17 +1521,18 @@ export function createMySqlStore(env = process.env) {
             toMySqlDateTime(normalizedBudget.updatedAt),
           ],
         );
-      }
 
-      return getOne(
-        `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
-                updated_at AS updatedAt
-         FROM budgets
-         WHERE user_id = ? AND month_key = ?
-         LIMIT 1`,
-        [normalizedBudget.userId, normalizedBudget.month],
-        normalizeBudgetFromRow,
-      );
+        return getOneWithExecutor(
+          connection,
+          `SELECT id, user_id AS userId, month_key AS month, amount, created_at AS createdAt,
+                  updated_at AS updatedAt
+           FROM budgets
+           WHERE user_id = ? AND month_key = ?
+           LIMIT 1`,
+          [normalizedBudget.userId, normalizedBudget.month],
+          normalizeBudgetFromRow,
+        );
+      });
     },
     async getUserStats(userId) {
       const pool = await getPool();
@@ -686,11 +1565,11 @@ export function createMySqlStore(env = process.env) {
         connection.release();
       }
     },
-    async createRecurringTemplate(template) {
-      const pool = await getPool();
+    async createRecurringTemplate(template, connection = null) {
+      const db = connection || (await getPool());
       const normalizedTemplate = normalizeRecurringTemplate(template);
 
-      await pool.execute(
+      await db.execute(
         `INSERT INTO recurring_templates (
            id, user_id, title, notes, amount, start_date, type, category, repeat_cycle, created_at, updated_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -709,7 +1588,17 @@ export function createMySqlStore(env = process.env) {
         ],
       );
 
-      return this.findRecurringTemplate(normalizedTemplate.userId, normalizedTemplate.id);
+      return getOneWithExecutor(
+        db,
+        `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
+                type, category, created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM recurring_templates
+         WHERE user_id = ? AND id = ?
+         LIMIT 1`,
+        [normalizedTemplate.userId, normalizedTemplate.id],
+        normalizeRecurringTemplateFromRow,
+      );
     },
     async findRecurringTemplate(userId, id) {
       return getOne(

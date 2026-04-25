@@ -43,20 +43,30 @@ export async function importJsonStore({
       );
     }
 
-    for (const user of source.users) {
-      await store.createUser(user);
-    }
+    const transactionalStore = typeof store.runInTransaction === "function" ? store : null;
 
-    for (const transaction of source.transactions) {
-      await store.createTransaction(transaction);
-    }
+    const importWork = async (connection = null) => {
+      for (const user of source.users) {
+        await store.createUser(user, connection);
+      }
 
-    for (const budget of source.budgets) {
-      await store.upsertBudget(budget);
-    }
+      for (const transaction of source.transactions) {
+        await store.createTransaction(transaction, connection);
+      }
 
-    for (const template of source.recurringTemplates) {
-      await store.createRecurringTemplate(template);
+      for (const budget of source.budgets) {
+        await store.upsertBudget(budget, connection);
+      }
+
+      for (const template of source.recurringTemplates) {
+        await store.createRecurringTemplate(template, connection);
+      }
+    };
+
+    if (transactionalStore) {
+      await transactionalStore.runInTransaction(importWork);
+    } else {
+      await importWork();
     }
 
     console.log(

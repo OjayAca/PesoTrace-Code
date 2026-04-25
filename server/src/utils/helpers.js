@@ -152,3 +152,23 @@ export function isAllowedOrigin(origin, clientOrigin = "http://localhost:5173") 
 
   return false;
 }
+
+export function getRequestOrigin(headers = {}) {
+  const origin = String(headers.origin || "").trim();
+
+  if (origin) {
+    return origin;
+  }
+
+  const referer = String(headers.referer || headers.referrer || "").trim();
+
+  if (!referer) {
+    return "";
+  }
+
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return "";
+  }
+}

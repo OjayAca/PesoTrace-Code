@@ -15,7 +15,7 @@ Future improvements from the document were intentionally excluded.
 - Frontend: React + Vite
 - Backend: Node.js + Express
 - Persistence: MySQL
-- Auth: JWT + bcrypt password hashing
+- Auth: JWT session cookie + bcrypt password hashing
 
 ## Project Structure
 
@@ -38,6 +38,10 @@ server/   Express API, MySQL schema, and migration scripts
    Copy-Item .\server\.env.example .\server\.env
    Copy-Item .\client\.env.example .\client\.env
    ```
+
+   `JWT_SECRET` is required for the server. The API will refuse to start if it is missing.
+
+   The server defaults to MySQL. Use `MYSQL_STORE=memory` only if you explicitly want to run against the bundled JSON snapshot during development.
 
 3. Start both apps:
 
@@ -71,6 +75,8 @@ The API runs on `http://localhost:5000`.
    MYSQL_DATABASE=pesotrace
    ```
 
+   Keep `MYSQL_STORE=true` for the normal MySQL-backed runtime.
+
 3. If you want to move the existing JSON demo data into MySQL, run:
 
    ```bash
@@ -81,6 +87,8 @@ The API runs on `http://localhost:5000`.
 
 - The documentation suggested React and Node.js, which this implementation follows.
 - The server keeps the same REST endpoints and JSON response shapes after the MySQL migration, so the React client does not need API changes.
+- MySQL is the default persistence layer; the JSON snapshot is available only through the explicit `MYSQL_STORE=memory` mode.
+- Browser sessions are stored in an `HttpOnly` cookie rather than `localStorage`.
 - The database schema is defined in [server/sql/schema.sql](./server/sql/schema.sql).
 
 ACCOUNT:

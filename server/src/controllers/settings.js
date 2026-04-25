@@ -4,18 +4,15 @@ import { sanitizeUser, isValidEmail, isDuplicateEntryError, buildUserPreferences
 
 export function getSettings(store) {
   return async (req, res) => {
-    const [user, stats] = await Promise.all([
-      store.getUserById(req.auth.userId),
-      store.getUserStats(req.auth.userId),
-    ]);
+    const overview = await store.getUserOverview(req.auth.userId);
 
-    if (!user) {
+    if (!overview) {
       return res.status(404).json({ message: "User account no longer exists." });
     }
 
     return res.json({
-      user: sanitizeUser(user),
-      stats,
+      user: sanitizeUser(overview.user),
+      stats: overview.stats,
     });
   };
 }
@@ -122,7 +119,7 @@ export function exportData(store) {
   return async (req, res) => {
     const [user, snapshot] = await Promise.all([
       store.getUserById(req.auth.userId),
-      store.getSnapshot(),
+      store.getUserFinanceSnapshot(req.auth.userId),
     ]);
 
     if (!user) {

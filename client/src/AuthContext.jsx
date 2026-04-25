@@ -8,20 +8,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = api.getStoredToken();
-
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
     api
       .me()
       .then(({ user: currentUser }) => {
         setUser(currentUser);
       })
       .catch(() => {
-        api.setToken(null);
+        setUser(null);
       })
       .finally(() => {
         setLoading(false);
@@ -45,16 +38,14 @@ export function AuthProvider({ children }) {
     setCurrentUser: setUser,
     async login(credentials) {
       const response = await api.login(credentials);
-      api.setToken(response.token);
       setUser(response.user);
     },
     async register(details) {
       const response = await api.register(details);
-      api.setToken(response.token);
       setUser(response.user);
     },
-    logout() {
-      api.setToken(null);
+    async logout() {
+      await api.logout();
       setUser(null);
     },
   };

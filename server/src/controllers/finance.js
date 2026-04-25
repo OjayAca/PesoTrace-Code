@@ -1,20 +1,12 @@
 import crypto from "node:crypto";
-import {
-  normalizeMonth,
-  getMonthlySummary,
-  getReports,
-  getUserTransactions,
-  toAmount,
-  getRecurringTemplates,
-} from "../finance.js";
+import { normalizeMonth, toAmount } from "../finance.js";
 import { getTransactionPayload, getRecurringTemplatePayload } from "../utils/helpers.js";
 
 export function getDashboard(store) {
   return async (req, res) => {
     try {
       const month = normalizeMonth(req.query.month);
-      const snapshot = await store.getSnapshot();
-      const summary = getMonthlySummary(req.auth.userId, month, snapshot);
+      const summary = await store.getMonthlySummary(req.auth.userId, month);
       return res.json({ summary });
     } catch (error) {
       return res.status(400).json({ message: error.message });
@@ -27,8 +19,7 @@ export function getReportsView(store) {
     try {
       const month = normalizeMonth(req.query.month);
       const months = Number(req.query.months || 6);
-      const snapshot = await store.getSnapshot();
-      const report = getReports(req.auth.userId, month, snapshot, months);
+      const report = await store.getReports(req.auth.userId, month, months);
       return res.json(report);
     } catch (error) {
       return res.status(400).json({ message: error.message });
@@ -39,13 +30,10 @@ export function getReportsView(store) {
 export function getTransactions(store) {
   return async (req, res) => {
     try {
-      const month = req.query.month ? normalizeMonth(req.query.month) : "";
-      const includeRecurring = req.query.includeRecurring !== "false";
-      const snapshot = await store.getSnapshot();
-      const transactions = getUserTransactions(
+      const transactions = await store.listUserTransactions(
         req.auth.userId,
         {
-          month,
+          month: req.query.month ? normalizeMonth(req.query.month) : "",
           type: req.query.type || "",
           category: req.query.category || "",
           query: req.query.query || "",
@@ -53,9 +41,8 @@ export function getTransactions(store) {
           endDate: req.query.endDate || "",
           sortBy: req.query.sortBy || "",
           sortOrder: req.query.sortOrder || "",
-          includeRecurring,
+          includeRecurring: req.query.includeRecurring !== "false",
         },
-        snapshot,
       );
 
       return res.json({ transactions });
@@ -124,8 +111,8 @@ export function upsertBudget(store) {
     try {
       const month = normalizeMonth(req.params.month);
       const mode = String(req.body.mode || "set").trim().toLowerCase();
-      if (!["set", "add"].includes(mode)) {
-        throw new Error("Budget mode must be set or add.");
+      if (!["set", "add", "edit"].includes(mode)) {
+        throw new Error("Budget mode must be set, add, or edit.");
       }
 
       const amount =
@@ -133,37 +120,24 @@ export function upsertBudget(store) {
           ? toAmount(req.body.amount, "Budget top-up")
           : toAmount(req.body.amount, "Budget", { allowZero: true });
       const now = new Date().toISOString();
-      const snapshot = await store.getSnapshot();
-      const existingBudget =
-        snapshot.budgets.find(
-          (budget) => budget.userId === req.auth.userId && budget.month === month,
-        ) || null;
-      let nextAmount = amount;
-
-      if (mode === "add") {
-        const currentSummary = getMonthlySummary(req.auth.userId, month, snapshot);
-        const currentBudget = currentSummary.budget === null ? 0 : Number(currentSummary.budget);
-        nextAmount = Math.round((currentBudget + amount) * 100) / 100;
-      } else if (existingBudget) {
-        return res.status(409).json({
-          message: "This month's budget is already set. Use Add to budget to increase it.",
-        });
-      }
-
-      await store.upsertBudget({
+      await store.saveBudget({
         id: crypto.randomUUID(),
         userId: req.auth.userId,
         month,
-        amount: nextAmount,
+        amount,
+        mode,
         createdAt: now,
         updatedAt: now,
       });
 
-      const updatedSnapshot = await store.getSnapshot();
       return res.json({
-        summary: getMonthlySummary(req.auth.userId, month, updatedSnapshot),
+        summary: await store.getMonthlySummary(req.auth.userId, month),
       });
     } catch (error) {
+      if (error?.code === "BUDGET_EXISTS") {
+        return res.status(409).json({ message: error.message });
+      }
+
       return res.status(400).json({ message: error.message });
     }
   };
@@ -171,9 +145,8 @@ export function upsertBudget(store) {
 
 export function getRecurringTemplatesList(store) {
   return async (req, res) => {
-    const snapshot = await store.getSnapshot();
     return res.json({
-      templates: getRecurringTemplates(req.auth.userId, snapshot),
+      templates: await store.getUserRecurringTemplates(req.auth.userId),
     });
   };
 }

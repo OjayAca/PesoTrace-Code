@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureJwtSecret } from "./auth.js";
 import { createMemoryStore, createStoreFromEnv, normalizeStoreData } from "./store.js";
 import { createApp } from "./app.js";
 
@@ -36,40 +37,26 @@ function listen(app, port) {
 }
 
 export async function createRuntimeStore(env = process.env) {
-  if (env.NODE_ENV !== "production" && env.MYSQL_STORE !== "true") {
+  const storeMode = String(env.MYSQL_STORE || "").trim().toLowerCase();
+
+  if (storeMode === "memory") {
     const seedData = await loadBundledSnapshot();
     const memoryStore = createMemoryStore(seedData);
     await memoryStore.init();
     return memoryStore;
   }
 
-  let mysqlStore;
+  const mysqlStore = createStoreFromEnv(env);
+  await mysqlStore.init();
+  return mysqlStore;
+}
 
-  try {
-    mysqlStore = createStoreFromEnv(env);
-    await mysqlStore.init();
-    return mysqlStore;
-  } catch (error) {
-    if (env.NODE_ENV === "production") {
-      throw error;
-    }
-
-    console.warn(
-      `MySQL store unavailable, starting with bundled JSON data instead: ${error.message}`,
-    );
-
-    if (mysqlStore) {
-      await mysqlStore.close().catch(() => {});
-    }
-
-    const seedData = await loadBundledSnapshot();
-    const memoryStore = createMemoryStore(seedData);
-    await memoryStore.init();
-    return memoryStore;
-  }
+export function validateRuntimeConfig(env = process.env) {
+  ensureJwtSecret(env);
 }
 
 export async function startServer() {
+  validateRuntimeConfig(process.env);
   const store = await createRuntimeStore(process.env);
   const app = createApp({
     store,

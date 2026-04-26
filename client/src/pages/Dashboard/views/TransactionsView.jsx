@@ -499,7 +499,7 @@ export function TransactionsView({
                 <span>Monthly budget</span>
                 <small>
                   {monthlyBudgetLocked
-                    ? "This month already has a budget amount. Edit replaces it, and Add increases it."
+                    ? "This month already has a saved budget. Use Add to budget below to increase it."
                     : "Saving will set the budget once for this month."}
                 </small>
               </div>
@@ -510,15 +510,18 @@ export function TransactionsView({
                 value={budgetAmount}
                 onChange={(event) => setBudgetAmount(event.target.value)}
                 placeholder="Enter monthly budget"
+                readOnly={monthlyBudgetLocked}
+                aria-readonly={monthlyBudgetLocked}
+                className={monthlyBudgetLocked ? "locked-input" : undefined}
                 required
               />
             </label>
             <button
               className="primary-button"
               type="submit"
-              disabled={savingBudget}
+              disabled={savingBudget || monthlyBudgetLocked}
             >
-              {savingBudget ? "Saving..." : monthlyBudgetLocked ? "Edit budget" : "Save budget"}
+              {savingBudget ? "Saving..." : monthlyBudgetLocked ? "Budget saved" : "Save budget"}
             </button>
           </form>
 

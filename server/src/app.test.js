@@ -634,7 +634,7 @@ test("cors accepts other localhost dev ports in development", async (t) => {
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
 });
 
-test("dashboard summary includes income, default budget, and recurring entries", async (t) => {
+test("dashboard summary leaves budget unset when no monthly budget exists", async (t) => {
   const user = {
     id: "user-1",
     name: "Summary User",
@@ -691,11 +691,11 @@ test("dashboard summary includes income, default budget, and recurring entries",
   assert.equal(response.status, 200);
   assert.equal(data.summary.totalIncome, 1500);
   assert.equal(data.summary.totalExpenses, 499);
-  assert.equal(data.summary.budget, 1200);
-  assert.equal(data.summary.budgetSource, "default");
+  assert.equal(data.summary.budget, null);
+  assert.equal(data.summary.budgetSource, "unset");
   assert.equal(data.summary.transactionCount, 2);
-  assert.equal(data.summary.statusType, "remaining");
-  assert.equal(data.summary.statusAmount, 701);
+  assert.equal(data.summary.statusType, "unset");
+  assert.equal(data.summary.statusAmount, null);
 });
 
 test("dashboard summary reports remaining budget when expenses stay below budget", async (t) => {
@@ -715,6 +715,18 @@ test("dashboard summary reports remaining budget when expenses stay below budget
   const { server, request } = await startTestApp({
     users: [user],
     transactions: [
+      {
+        id: "txn-income",
+        userId: "user-remaining",
+        title: "Allowance",
+        amount: 1500,
+        type: "income",
+        category: "Allowance",
+        notes: "",
+        transactionDate: "2026-04-01",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
       {
         id: "txn-remaining",
         userId: "user-remaining",
@@ -748,11 +760,14 @@ test("dashboard summary reports remaining budget when expenses stay below budget
   });
 
   assert.equal(response.status, 200);
+  assert.equal(data.summary.totalIncome, 1500);
   assert.equal(data.summary.totalExpenses, 2000);
   assert.equal(data.summary.budget, 5000);
   assert.equal(data.summary.budgetSource, "month");
+  assert.equal(data.summary.availableFunds, 6500);
   assert.equal(data.summary.statusType, "remaining");
-  assert.equal(data.summary.statusAmount, 3000);
+  assert.equal(data.summary.statusAmount, 4500);
+  assert.equal(data.summary.budgetRemaining, 4500);
 });
 
 test("dashboard summary reports exact match when expenses equal budget", async (t) => {
@@ -1040,7 +1055,7 @@ test("budget set rejects overwriting an existing monthly budget", async (t) => {
   );
 });
 
-test("settings default budget stays a fallback when a month already has a saved budget", async (t) => {
+test("settings preference updates do not change saved monthly budgets", async (t) => {
   const user = {
     id: "user-default-fallback",
     name: "Fallback User",
@@ -1124,8 +1139,8 @@ test("settings default budget stays a fallback when a month already has a saved 
   assert.equal(aprilAfterResponse.data.summary.budget, 5000);
   assert.equal(aprilAfterResponse.data.summary.budgetSource, "month");
   assert.equal(mayResponse.response.status, 200);
-  assert.equal(mayResponse.data.summary.budget, 700);
-  assert.equal(mayResponse.data.summary.budgetSource, "default");
+  assert.equal(mayResponse.data.summary.budget, null);
+  assert.equal(mayResponse.data.summary.budgetSource, "unset");
   assert.equal(mayEditResponse.response.status, 200);
   assert.equal(mayEditedResponse.response.status, 200);
   assert.equal(mayEditedResponse.data.summary.budget, 650);
@@ -1292,7 +1307,7 @@ test("settings preferences and password updates work for the authenticated user"
   assert.equal(preferencesResponse.response.status, 200);
   let snapshot = await store.getSnapshot();
   assert.equal(snapshot.users[0].preferences.preferredTheme, "dark");
-  assert.equal(snapshot.users[0].preferences.defaultBudget, 1750);
+  assert.equal(snapshot.users[0].preferences.defaultBudget, null);
 
   const passwordResponse = await request("/api/settings/password", {
     method: "PUT",

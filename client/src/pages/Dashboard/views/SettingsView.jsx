@@ -78,7 +78,7 @@ export function SettingsView({
             <p className="eyebrow">
               <Settings size={12} /> Preferences
             </p>
-            <h2>Workspace defaults</h2>
+            <h2>Workspace preferences</h2>
           </div>
         </div>
         <form className="stack-form" onSubmit={handlePreferencesSubmit}>
@@ -99,25 +99,6 @@ export function SettingsView({
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </select>
-          </label>
-          <label>
-            <div className="field-label">
-              <span>Default monthly budget</span>
-              <small>Used when a month has no custom budget.</small>
-            </div>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={preferencesForm.defaultBudget}
-              onChange={(event) =>
-                setPreferencesForm((current) => ({
-                  ...current,
-                  defaultBudget: event.target.value,
-                }))
-              }
-              placeholder="Leave blank to disable"
-            />
           </label>
           <button
             className="primary-button"

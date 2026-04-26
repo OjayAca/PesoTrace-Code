@@ -142,19 +142,9 @@ function getBudgetAmount(userId, month, storeData = EMPTY_STORE_DATA) {
     };
   }
 
-  const user = storeData.users.find((entry) => entry.id === userId);
-  const defaultBudget = user?.preferences?.defaultBudget;
-
-  if (defaultBudget === null || defaultBudget === undefined || defaultBudget === "") {
-    return {
-      amount: null,
-      source: "unset",
-    };
-  }
-
   return {
-    amount: roundCurrency(defaultBudget),
-    source: "default",
+    amount: null,
+    source: "unset",
   };
 }
 
@@ -331,13 +321,18 @@ export function getMonthlySummary(userId, month, storeData = EMPTY_STORE_DATA) {
     netBalance,
     budget,
     budgetSource,
+    availableFunds: null,
+    budgetRemaining: null,
     transactionCount: transactions.length,
     statusType: "unset",
     statusAmount: null,
   };
 
   if (budget !== null) {
-    const statusAmount = roundCurrency(budget - roundedExpenses);
+    const availableFunds = roundCurrency(budget + roundedIncome);
+    const statusAmount = roundCurrency(availableFunds - roundedExpenses);
+    summary.availableFunds = availableFunds;
+    summary.budgetRemaining = statusAmount;
     summary.statusAmount = statusAmount;
 
     if (statusAmount > 0) {

@@ -3,12 +3,6 @@ import { toAmount, normalizeDate, normalizeTransactionType, normalizeCategory } 
 export function getUserPreferences(user = {}) {
   return {
     preferredTheme: user?.preferences?.preferredTheme || "light",
-    defaultBudget:
-      user?.preferences?.defaultBudget === null ||
-      user?.preferences?.defaultBudget === undefined ||
-      user?.preferences?.defaultBudget === ""
-        ? null
-        : Number(user.preferences.defaultBudget),
     currency: user?.preferences?.currency || "PHP",
   };
 }
@@ -42,17 +36,8 @@ export function buildUserPreferences(user, payload = {}) {
     throw new Error("Preferred theme must be light or dark.");
   }
 
-  const nextBudget =
-    payload.defaultBudget === undefined
-      ? current.defaultBudget
-      : toAmount(payload.defaultBudget, "Default budget", {
-          allowZero: true,
-          allowEmpty: true,
-        });
-
   return {
     preferredTheme: nextTheme,
-    defaultBudget: nextBudget,
     currency: "PHP",
   };
 }

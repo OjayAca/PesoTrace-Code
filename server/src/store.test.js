@@ -241,11 +241,11 @@ test("memory store returns SQL-compatible monthly summaries through the store in
 
   assert.equal(summary.totalIncome, 1500);
   assert.equal(summary.totalExpenses, 499);
-  assert.equal(summary.budget, 1200);
-  assert.equal(summary.budgetSource, "default");
+  assert.equal(summary.budget, null);
+  assert.equal(summary.budgetSource, "unset");
   assert.equal(summary.transactionCount, 2);
-  assert.equal(summary.statusType, "remaining");
-  assert.equal(summary.statusAmount, 701);
+  assert.equal(summary.statusType, "unset");
+  assert.equal(summary.statusAmount, null);
 });
 
 test("memory store returns recurring templates without a full user snapshot", async () => {
@@ -351,7 +351,7 @@ test("memory store returns reports through the store interface", async () => {
   assert.equal(reports.highlights.recurringTemplateCount, 1);
 });
 
-test("memory store budget add uses the default budget as the base amount", async () => {
+test("memory store budget add uses the saved month budget as the base amount", async () => {
   const store = createMemoryStore({
     users: [
       {
@@ -365,6 +365,16 @@ test("memory store budget add uses the default budget as the base amount", async
           defaultBudget: 500,
           currency: "PHP",
         },
+      },
+    ],
+    budgets: [
+      {
+        id: "budget-1",
+        userId: "user-1",
+        month: "2026-04",
+        amount: 500,
+        createdAt: "2026-04-10T00:00:00.000Z",
+        updatedAt: "2026-04-10T00:00:00.000Z",
       },
     ],
   });

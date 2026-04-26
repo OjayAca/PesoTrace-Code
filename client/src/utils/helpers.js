@@ -62,7 +62,7 @@ export function getStatusMeta(summary) {
     return {
       tone: "neutral",
       label: "Budget not set",
-      description: "Set a monthly or default budget to unlock allowance tracking.",
+      description: "Set a monthly budget to unlock allowance tracking.",
       icon: Target,
     };
   }

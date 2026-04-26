@@ -9,6 +9,7 @@ import { formatCurrency, formatDate, formatMonthLabel, roundMoney, downloadJson,
 import { getCurrentMonth, loadStoredTransactionFilters, buildTransactionFormFromSource, getStatusMeta } from "../../utils/helpers";
 import { readStorageValue, writeStorageValue, removeStorageValue } from "../../utils/storage";
 import { useTheme } from "../../hooks/useTheme";
+import { buildReportPdf } from "../../utils/reportExports";
 
 import { ConfirmationModal } from "../../components/Common/ConfirmationModal";
 import { getBudgetSubmissionDetails, loadDashboardMutationData, loadDashboardSupportData, loadDashboardTransactions, loadDashboardWorkspace } from "./dashboardApi";
@@ -80,11 +81,6 @@ export function Dashboard() {
   });
   const [preferencesForm, setPreferencesForm] = useState({
     preferredTheme: user.preferences?.preferredTheme || "light",
-    defaultBudget:
-      user.preferences?.defaultBudget === null ||
-        user.preferences?.defaultBudget === undefined
-        ? ""
-        : String(user.preferences.defaultBudget),
   });
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
@@ -93,8 +89,20 @@ export function Dashboard() {
   });
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [confirmingAction, setConfirmingAction] = useState(false);
+  const [pendingPrint, setPendingPrint] = useState(false);
   const loadIdRef = useRef(0);
   const monthPickerRef = useRef(null);
+  const reportTitleRef = useRef("");
+
+  function downloadPdf(filename, bytes) {
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
 
   function pushFlash(type, message) {
     setFlash({ type, message });
@@ -171,11 +179,6 @@ export function Dashboard() {
     });
     setPreferencesForm({
       preferredTheme: response.user.preferences?.preferredTheme || "light",
-      defaultBudget:
-        response.user.preferences?.defaultBudget === null ||
-          response.user.preferences?.defaultBudget === undefined
-          ? ""
-          : String(response.user.preferences.defaultBudget),
     });
   }
 
@@ -266,6 +269,36 @@ export function Dashboard() {
   }, [flash]);
 
   useEffect(() => {
+    if (!pendingPrint || !location.pathname.endsWith("/reports")) {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      window.print();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [pendingPrint, location.pathname]);
+
+  useEffect(() => {
+    if (!pendingPrint) {
+      return undefined;
+    }
+
+    function handleAfterPrint() {
+      if (reportTitleRef.current) {
+        document.title = reportTitleRef.current;
+        reportTitleRef.current = "";
+      }
+
+      setPendingPrint(false);
+    }
+
+    window.addEventListener("afterprint", handleAfterPrint, { once: true });
+    return () => window.removeEventListener("afterprint", handleAfterPrint);
+  }, [pendingPrint]);
+
+  useEffect(() => {
     if (!confirmDialog) {
       return undefined;
     }
@@ -332,14 +365,38 @@ export function Dashboard() {
       ? null
       : Number(dashboard.budget);
   const monthlyBudgetLocked = budgetValue !== null;
+  const availableFunds = budgetValue === null ? null : roundMoney(budgetValue + totalIncome);
   const budgetRemaining =
-    budgetValue === null ? null : roundMoney(budgetValue - totalExpenses);
+    availableFunds === null ? null : roundMoney(availableFunds - totalExpenses);
   const isOverBudget = budgetRemaining !== null && budgetRemaining < 0;
+  const budgetStatusMeta =
+    budgetRemaining === null
+      ? statusMeta
+      : budgetRemaining > 0
+        ? {
+            tone: "positive",
+            label: "On track",
+            description: `${formatCurrency(totalIncome)} income and ${formatCurrency(budgetValue)} budget still cover this month's expenses.`,
+            icon: statusMeta.icon,
+          }
+        : budgetRemaining === 0
+          ? {
+              tone: "balanced",
+              label: "Budget matched",
+              description: `${formatCurrency(totalIncome)} income and ${formatCurrency(budgetValue)} budget are fully used.`,
+              icon: statusMeta.icon,
+            }
+          : {
+              tone: "warning",
+              label: "Over budget",
+              description: `${formatCurrency(Math.abs(budgetRemaining))} is still short after using your income and budget.`,
+              icon: statusMeta.icon,
+            };
   let progress = 0;
 
-  if (budgetValue !== null && budgetValue > 0) {
-    progress = Math.min((totalExpenses / budgetValue) * 100, 100);
-  } else if (budgetValue === 0 && totalExpenses > 0) {
+  if (availableFunds !== null && availableFunds > 0) {
+    progress = Math.min((totalExpenses / availableFunds) * 100, 100);
+  } else if (availableFunds === 0 && totalExpenses > 0) {
     progress = 100;
   }
   const averageExpense =
@@ -354,36 +411,36 @@ export function Dashboard() {
   const latestManualTransaction =
     transactions.find((transaction) => !transaction.isRecurring) || transactions[0] || null;
   const budgetCardLabel =
-    budgetValue === null
+    budgetRemaining === null
       ? "Expense budget progress"
       : isOverBudget
         ? "Over budget"
         : "Remaining budget";
   const budgetCardHeadline =
-    budgetValue === null
+    budgetRemaining === null
       ? formatCurrency(totalExpenses)
       : isOverBudget
         ? `Over by ${formatCurrency(Math.abs(budgetRemaining))}`
         : formatCurrency(budgetRemaining);
   const budgetCardCopy =
-    budgetValue !== null
+    budgetRemaining !== null
       ? isOverBudget
-        ? `${formatCurrency(totalExpenses)} spent against ${formatCurrency(budgetValue)} for ${monthLabel}.`
-        : `${formatCurrency(totalExpenses)} spent of ${formatCurrency(budgetValue)} for ${monthLabel}.`
-      : "Set a budget in this month or use a default budget in Settings.";
+        ? `${formatCurrency(totalIncome)} income and ${formatCurrency(totalExpenses)} expenses against ${formatCurrency(budgetValue)} budget still leave ${formatCurrency(Math.abs(budgetRemaining))} short for ${monthLabel}.`
+        : `${formatCurrency(totalIncome)} income and ${formatCurrency(totalExpenses)} expenses against ${formatCurrency(budgetValue)} budget leave ${formatCurrency(budgetRemaining)} for ${monthLabel}.`
+      : "Set a monthly budget for this month to track your allowance.";
   const selectedMonthDate = new Date(`${selectedMonth}-01T00:00:00`);
   const monthDays = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0).getDate();
   const currentMonthKey = getCurrentMonth();
   const monthProgressDays =
     selectedMonth === currentMonthKey ? new Date().getDate() : monthDays;
   const budgetPace =
-    budgetValue === null
+    availableFunds === null
       ? null
-      : roundMoney((budgetValue / monthDays) * monthProgressDays);
+      : roundMoney((availableFunds / monthDays) * monthProgressDays);
   const budgetPaceDelta = budgetPace === null ? null : roundMoney(budgetPace - totalExpenses);
   const budgetPaceCopy =
     budgetPaceDelta === null
-      ? "Set a budget to see whether this month is ahead or behind pace."
+      ? "Set a budget and log income to compare pace for this month."
       : budgetPaceDelta >= 0
         ? `${formatCurrency(budgetPaceDelta)} under the expected pace for ${monthLabel}.`
         : `${formatCurrency(Math.abs(budgetPaceDelta))} over the expected pace for ${monthLabel}.`;
@@ -579,6 +636,12 @@ export function Dashboard() {
 
   async function handleBudgetSubmit(event) {
     event.preventDefault();
+
+    if (monthlyBudgetLocked) {
+      pushFlash("info", "This month is already locked. Use Add to budget below.");
+      return;
+    }
+
     const submission = getBudgetSubmissionDetails(dashboard, monthLabel);
     await submitBudgetChange(submission.mode, budgetAmount, submission.successMessage);
   }
@@ -588,24 +651,34 @@ export function Dashboard() {
     await submitBudgetChange("add", budgetTopUpAmount, `Budget topped up for ${monthLabel}.`);
   }
 
-  async function handleReportOutput() {
+  function buildReportPayload() {
+    return {
+      monthLabel,
+      exportedAt: new Date().toISOString(),
+      summary: dashboard,
+      reports,
+      reportComparisons,
+      transactions,
+    };
+  }
+
+  async function handleReportPdfExport() {
     clearMessages();
-    navigate("/dashboard/reports");
 
-    const previousTitle = document.title;
+    try {
+      downloadPdf(`pesotrace-report-${selectedMonth}.pdf`, buildReportPdf(buildReportPayload()));
+      pushFlash("success", "PDF report downloaded.");
+    } catch (reportError) {
+      setError(reportError.message);
+    }
+  }
+
+  function handleReportPrint() {
+    clearMessages();
+    reportTitleRef.current = document.title;
     document.title = `PesoTrace - ${monthLabel} report`;
-
-    window.addEventListener(
-      "afterprint",
-      () => {
-        document.title = previousTitle;
-      },
-      { once: true },
-    );
-
-    window.requestAnimationFrame(() => {
-      window.print();
-    });
+    setPendingPrint(true);
+    navigate("/dashboard/reports");
   }
 
   async function handleTransactionSubmit(event) {
@@ -794,7 +867,6 @@ export function Dashboard() {
     try {
       const response = await api.updatePreferences({
         preferredTheme: preferencesForm.preferredTheme,
-        defaultBudget: preferencesForm.defaultBudget,
       });
       setCurrentUser(response.user);
       setTheme(response.user.preferences.preferredTheme);
@@ -802,6 +874,9 @@ export function Dashboard() {
         ...(current || {}),
         user: response.user,
       }));
+      setPreferencesForm({
+        preferredTheme: response.user.preferences.preferredTheme || "light",
+      });
       await loadWorkspaceData(selectedMonth);
       pushFlash("success", "Preferences saved.");
     } catch (preferenceError) {
@@ -975,8 +1050,8 @@ export function Dashboard() {
       label: "Monthly budget",
       value: formatCurrency(dashboard?.budget),
       detail:
-        dashboard?.budgetSource === "default"
-          ? "Using your default budget from Settings."
+        dashboard?.budgetSource === "unset"
+          ? "No monthly budget saved yet."
           : `Budget applied for ${monthLabel}.`,
     },
     {
@@ -1081,7 +1156,7 @@ export function Dashboard() {
                 monthLabel={monthLabel}
                 dashboard={dashboard}
                 transactionInsights={transactionInsights}
-                statusMeta={statusMeta}
+                statusMeta={budgetStatusMeta}
                 budgetCardLabel={budgetCardLabel}
                 budgetCardHeadline={budgetCardHeadline}
                 budgetCardCopy={budgetCardCopy}
@@ -1146,7 +1221,8 @@ export function Dashboard() {
             element={
               <ReportsView
                 monthLabel={monthLabel}
-                handleReportOutput={handleReportOutput}
+                handleReportPdfExport={handleReportPdfExport}
+                handleReportPrint={handleReportPrint}
                 reports={reports}
                 trendMaxExpense={trendMaxExpense}
                 reportComparisons={reportComparisons}

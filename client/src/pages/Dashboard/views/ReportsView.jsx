@@ -3,7 +3,8 @@ import { formatCurrency } from "../../../utils/formatters";
 
 export function ReportsView({
   monthLabel,
-  handleReportOutput,
+  handleReportPdfExport,
+  handleReportPrint,
   reports,
   trendMaxExpense,
   reportComparisons,
@@ -26,14 +27,14 @@ export function ReportsView({
           <button
             className="secondary-button compact-button"
             type="button"
-            onClick={handleReportOutput}
+            onClick={handleReportPdfExport}
           >
             Export PDF
           </button>
           <button
             className="secondary-button compact-button"
             type="button"
-            onClick={handleReportOutput}
+            onClick={handleReportPrint}
           >
             Print
           </button>

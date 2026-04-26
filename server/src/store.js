@@ -137,13 +137,18 @@ function buildMonthlySummary(month, totals = {}, budgetInfo = {}) {
     netBalance: roundCurrency(roundedIncome - roundedExpenses),
     budget,
     budgetSource: budgetInfo.source || "unset",
+    availableFunds: null,
+    budgetRemaining: null,
     transactionCount: Number(totals.transactionCount || 0),
     statusType: "unset",
     statusAmount: null,
   };
 
   if (budget !== null) {
-    const statusAmount = roundCurrency(budget - roundedExpenses);
+    const availableFunds = roundCurrency(budget + roundedIncome);
+    const statusAmount = roundCurrency(availableFunds - roundedExpenses);
+    summary.availableFunds = availableFunds;
+    summary.budgetRemaining = statusAmount;
     summary.statusAmount = statusAmount;
 
     if (statusAmount > 0) {
@@ -625,8 +630,7 @@ export function createMemoryStore(seedData = {}) {
       }
 
       if (mode === "add") {
-        const defaultBudget = toNumberOrNull(user.preferences?.defaultBudget);
-        const baseAmount = existing ? Number(existing.amount) : Number(defaultBudget || 0);
+        const baseAmount = existing ? Number(existing.amount) : 0;
         const nextAmount = roundCurrency(baseAmount + normalizedAmount);
 
         if (existing) {
@@ -915,29 +919,17 @@ export function createMySqlStore(env = process.env) {
     const db = executor || (await getPool());
     const row = await getOneWithExecutor(
       db,
-      `SELECT
-         b.amount AS monthBudget,
-         u.default_budget AS defaultBudget
-       FROM users u
-       LEFT JOIN budgets b
-         ON b.user_id = u.id
-        AND b.month_key = ?
-       WHERE u.id = ?
+      `SELECT amount AS monthBudget
+       FROM budgets
+       WHERE user_id = ? AND month_key = ?
        LIMIT 1`,
-      [month, userId],
+      [userId, month],
     );
 
     if (row?.monthBudget !== null && row?.monthBudget !== undefined) {
       return {
         amount: roundCurrency(row.monthBudget),
         source: "month",
-      };
-    }
-
-    if (row?.defaultBudget !== null && row?.defaultBudget !== undefined) {
-      return {
-        amount: roundCurrency(row.defaultBudget),
-        source: "default",
       };
     }
 
@@ -1421,14 +1413,13 @@ export function createMySqlStore(env = process.env) {
       return runInTransaction(async (connection) => {
         const user = await getOneWithExecutor(
           connection,
-          `SELECT id, default_budget AS defaultBudget
+          `SELECT id
            FROM users
            WHERE id = ?
            LIMIT 1`,
           [userId],
           (row) => ({
             id: row.id,
-            defaultBudget: toNumberOrNull(row.defaultBudget),
           }),
         );
 
@@ -1456,7 +1447,7 @@ export function createMySqlStore(env = process.env) {
 
         if (mode === "add") {
           const nextAmount = roundCurrency(
-            Number(existing?.amount ?? user.defaultBudget ?? 0) + normalizedAmount,
+            Number(existing?.amount ?? 0) + normalizedAmount,
           );
 
           if (existing) {

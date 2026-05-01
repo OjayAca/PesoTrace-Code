@@ -1,0 +1,17 @@
+{
+  "name": "PesoTrace",
+  "short_name": "PesoTrace",
+  "description": "Personal finance tracker — budgets, expenses, and monthly clarity.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c1a2b",
+  "theme_color": "#0c1a2b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

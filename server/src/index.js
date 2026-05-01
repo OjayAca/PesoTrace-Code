@@ -40,6 +40,10 @@ export async function createRuntimeStore(env = process.env) {
   const storeMode = String(env.MYSQL_STORE || "").trim().toLowerCase();
 
   if (storeMode === "memory") {
+    if (env.NODE_ENV === "production" && env.ALLOW_MEMORY_STORE !== "true") {
+      throw new Error("MYSQL_STORE=memory is not allowed in production unless ALLOW_MEMORY_STORE=true.");
+    }
+
     const seedData = await loadBundledSnapshot();
     const memoryStore = createMemoryStore(seedData);
     await memoryStore.init();

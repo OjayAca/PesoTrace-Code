@@ -11,6 +11,10 @@ export function ensureJwtSecret(env = process.env) {
     throw new Error("JWT_SECRET is required. Set it in server/.env or the environment.");
   }
 
+  if (secret.length < 32) {
+    throw new Error("JWT_SECRET must be at least 32 characters.");
+  }
+
   return secret;
 }
 
@@ -169,6 +173,26 @@ export function requireAuth(req, res, next) {
   } catch {
     return res.status(401).json({ message: "Your session is invalid or expired." });
   }
+}
+
+export function requireTrustedRequestOrigin(clientOrigin = "http://localhost:5173") {
+  return (req, res, next) => {
+    const method = String(req.method || "GET").toUpperCase();
+
+    if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+      return next();
+    }
+
+    const requestOrigin = getRequestOrigin(req.headers);
+
+    if (!requestOrigin || isAllowedOrigin(requestOrigin, clientOrigin)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      message: "This request origin is not allowed for session-authenticated changes.",
+    });
+  };
 }
 
 export function requireTrustedOrigin(clientOrigin = "http://localhost:5173") {

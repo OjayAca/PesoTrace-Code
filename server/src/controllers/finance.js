@@ -1,96 +1,84 @@
 import crypto from "node:crypto";
 import { normalizeMonth, toAmount } from "../finance.js";
+import { ClientError } from "../utils/errors.js";
 import { getTransactionPayload, getRecurringTemplatePayload } from "../utils/helpers.js";
+
+function getClientPayload(readPayload) {
+  try {
+    return readPayload();
+  } catch (error) {
+    throw new ClientError(error.message);
+  }
+}
 
 export function getDashboard(store) {
   return async (req, res) => {
-    try {
-      const month = normalizeMonth(req.query.month);
-      const summary = await store.getMonthlySummary(req.auth.userId, month);
-      return res.json({ summary });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
+    const month = getClientPayload(() => normalizeMonth(req.query.month));
+    const summary = await store.getMonthlySummary(req.auth.userId, month);
+    return res.json({ summary });
   };
 }
 
 export function getReportsView(store) {
   return async (req, res) => {
-    try {
-      const month = normalizeMonth(req.query.month);
-      const months = Number(req.query.months || 6);
-      const report = await store.getReports(req.auth.userId, month, months);
-      return res.json(report);
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
+    const month = getClientPayload(() => normalizeMonth(req.query.month));
+    const months = Number(req.query.months || 6);
+    const report = await store.getReports(req.auth.userId, month, months);
+    return res.json(report);
   };
 }
 
 export function getTransactions(store) {
   return async (req, res) => {
-    try {
-      const transactions = await store.listUserTransactions(
-        req.auth.userId,
-        {
-          month: req.query.month ? normalizeMonth(req.query.month) : "",
-          type: req.query.type || "",
-          category: req.query.category || "",
-          query: req.query.query || "",
-          startDate: req.query.startDate || "",
-          endDate: req.query.endDate || "",
-          sortBy: req.query.sortBy || "",
-          sortOrder: req.query.sortOrder || "",
-          includeRecurring: req.query.includeRecurring !== "false",
-        },
-      );
+    const query = getClientPayload(() => ({
+      month: req.query.month ? normalizeMonth(req.query.month) : "",
+      type: req.query.type || "",
+      category: req.query.category || "",
+      query: req.query.query || "",
+      startDate: req.query.startDate || "",
+      endDate: req.query.endDate || "",
+      sortBy: req.query.sortBy || "",
+      sortOrder: req.query.sortOrder || "",
+      includeRecurring: req.query.includeRecurring !== "false",
+    }));
+    const transactions = await store.listUserTransactions(req.auth.userId, query);
 
-      return res.json({ transactions });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
+    return res.json({ transactions });
   };
 }
 
 export function createTransaction(store) {
   return async (req, res) => {
-    try {
-      const payload = getTransactionPayload(req.body);
-      const now = new Date().toISOString();
-      const transaction = await store.createTransaction({
-        id: crypto.randomUUID(),
-        userId: req.auth.userId,
-        ...payload,
-        createdAt: now,
-        updatedAt: now,
-      });
+    const payload = getClientPayload(() => getTransactionPayload(req.body));
+    const now = new Date().toISOString();
+    const transaction = await store.createTransaction({
+      id: crypto.randomUUID(),
+      userId: req.auth.userId,
+      ...payload,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      return res.status(201).json({ transaction });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
+    return res.status(201).json({ transaction });
   };
 }
 
 export function updateTransaction(store) {
   return async (req, res) => {
-    try {
-      const existingTransaction = await store.findTransaction(req.auth.userId, req.params.id);
+    const existingTransaction = await store.findTransaction(req.auth.userId, req.params.id);
 
-      if (!existingTransaction) {
-        return res.status(404).json({ message: "Transaction not found." });
-      }
-
-      const transaction = await store.updateTransaction(req.auth.userId, req.params.id, {
-        ...existingTransaction,
-        ...getTransactionPayload(req.body),
-        updatedAt: new Date().toISOString(),
-      });
-
-      return res.json({ transaction });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
+    if (!existingTransaction) {
+      throw new ClientError("Transaction not found.", 404);
     }
+
+    const payload = getClientPayload(() => getTransactionPayload(req.body));
+    const transaction = await store.updateTransaction(req.auth.userId, req.params.id, {
+      ...existingTransaction,
+      ...payload,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return res.json({ transaction });
   };
 }
 
@@ -99,7 +87,7 @@ export function deleteTransaction(store) {
     const deleted = await store.deleteTransaction(req.auth.userId, req.params.id);
 
     if (!deleted) {
-      return res.status(404).json({ message: "Transaction not found." });
+      throw new ClientError("Transaction not found.", 404);
     }
 
     return res.json({ success: true });
@@ -108,7 +96,7 @@ export function deleteTransaction(store) {
 
 export function upsertBudget(store) {
   return async (req, res) => {
-    try {
+    const { month, mode, amount } = getClientPayload(() => {
       const month = normalizeMonth(req.params.month);
       const mode = String(req.body.mode || "set").trim().toLowerCase();
       if (!["set", "add", "edit"].includes(mode)) {
@@ -119,27 +107,22 @@ export function upsertBudget(store) {
         mode === "add"
           ? toAmount(req.body.amount, "Budget top-up")
           : toAmount(req.body.amount, "Budget", { allowZero: true });
-      const now = new Date().toISOString();
-      await store.saveBudget({
-        id: crypto.randomUUID(),
-        userId: req.auth.userId,
-        month,
-        amount,
-        mode,
-        createdAt: now,
-        updatedAt: now,
-      });
+      return { month, mode, amount };
+    });
+    const now = new Date().toISOString();
+    await store.saveBudget({
+      id: crypto.randomUUID(),
+      userId: req.auth.userId,
+      month,
+      amount,
+      mode,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      return res.json({
-        summary: await store.getMonthlySummary(req.auth.userId, month),
-      });
-    } catch (error) {
-      if (error?.code === "BUDGET_EXISTS") {
-        return res.status(409).json({ message: error.message });
-      }
-
-      return res.status(400).json({ message: error.message });
-    }
+    return res.json({
+      summary: await store.getMonthlySummary(req.auth.userId, month),
+    });
   };
 }
 
@@ -153,42 +136,36 @@ export function getRecurringTemplatesList(store) {
 
 export function createRecurringTemplate(store) {
   return async (req, res) => {
-    try {
-      const now = new Date().toISOString();
-      const template = await store.createRecurringTemplate({
-        id: crypto.randomUUID(),
-        userId: req.auth.userId,
-        ...getRecurringTemplatePayload(req.body),
-        createdAt: now,
-        updatedAt: now,
-      });
+    const payload = getClientPayload(() => getRecurringTemplatePayload(req.body));
+    const now = new Date().toISOString();
+    const template = await store.createRecurringTemplate({
+      id: crypto.randomUUID(),
+      userId: req.auth.userId,
+      ...payload,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      return res.status(201).json({ template });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
+    return res.status(201).json({ template });
   };
 }
 
 export function updateRecurringTemplate(store) {
   return async (req, res) => {
-    try {
-      const existingTemplate = await store.findRecurringTemplate(req.auth.userId, req.params.id);
+    const existingTemplate = await store.findRecurringTemplate(req.auth.userId, req.params.id);
 
-      if (!existingTemplate) {
-        return res.status(404).json({ message: "Recurring template not found." });
-      }
-
-      const template = await store.updateRecurringTemplate(req.auth.userId, req.params.id, {
-        ...existingTemplate,
-        ...getRecurringTemplatePayload(req.body),
-        updatedAt: new Date().toISOString(),
-      });
-
-      return res.json({ template });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
+    if (!existingTemplate) {
+      throw new ClientError("Recurring template not found.", 404);
     }
+
+    const payload = getClientPayload(() => getRecurringTemplatePayload(req.body));
+    const template = await store.updateRecurringTemplate(req.auth.userId, req.params.id, {
+      ...existingTemplate,
+      ...payload,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return res.json({ template });
   };
 }
 
@@ -197,7 +174,7 @@ export function deleteRecurringTemplate(store) {
     const deleted = await store.deleteRecurringTemplate(req.auth.userId, req.params.id);
 
     if (!deleted) {
-      return res.status(404).json({ message: "Recurring template not found." });
+      throw new ClientError("Recurring template not found.", 404);
     }
 
     return res.json({ success: true });

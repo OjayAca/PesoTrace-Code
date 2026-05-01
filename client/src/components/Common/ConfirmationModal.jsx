@@ -1,6 +1,15 @@
+import { useEffect, useRef } from "react";
 import { AlertCircle, X } from "lucide-react";
 
 export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
+  const confirmButtonRef = useRef(null);
+
+  useEffect(() => {
+    if (dialog && !submitting) {
+      confirmButtonRef.current?.focus();
+    }
+  }, [dialog, submitting]);
+
   if (!dialog) {
     return null;
   }
@@ -49,6 +58,7 @@ export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
             {dialog.cancelLabel || "Cancel"}
           </button>
           <button
+            ref={confirmButtonRef}
             className={dialog.tone === "danger" ? "danger-button" : "primary-button"}
             type="button"
             onClick={onConfirm}

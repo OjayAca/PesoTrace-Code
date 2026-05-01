@@ -5,7 +5,7 @@ import { createToken } from "./auth.js";
 import { createApp } from "./app.js";
 import { createMemoryStore } from "./store.js";
 
-process.env.JWT_SECRET = "test-jwt-secret";
+process.env.JWT_SECRET = "test-jwt-secret-with-at-least-32-chars";
 
 function closeServer(server) {
   return new Promise((resolve, reject) => {
@@ -20,12 +20,13 @@ function closeServer(server) {
   });
 }
 
-async function startTestApp(seedData = {}) {
+async function startTestApp(seedData = {}, appOptions = {}) {
   const store = createMemoryStore(seedData);
 
   const app = createApp({
     store,
     clientOrigin: "http://localhost:5173",
+    ...appOptions,
   });
 
   const server = await new Promise((resolve) => {
@@ -115,6 +116,30 @@ test("register rejects short passwords", async (t) => {
   assert.equal(data.message, "Password must be at least 6 characters.");
 });
 
+test("register rejects untrusted origins", async (t) => {
+  const { server, request } = await startTestApp();
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/auth/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "https://evil.example",
+    },
+    body: JSON.stringify({
+      name: "Blocked User",
+      email: "blocked@example.com",
+      password: "secret123",
+    }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(
+    data.message,
+    "This request origin is not allowed for session-authenticated changes.",
+  );
+});
+
 test("login returns the user and sets a session cookie for valid credentials", async (t) => {
   const passwordHash = await bcrypt.hash("secret123", 1);
   const { server, request } = await startTestApp({
@@ -143,6 +168,40 @@ test("login returns the user and sets a session cookie for valid credentials", a
   assert.equal(data.user.email, "login@example.com");
   assert.equal("token" in data, false);
   assert.match(response.headers.get("set-cookie") || "", /HttpOnly/i);
+});
+
+test("login rejects untrusted origins", async (t) => {
+  const passwordHash = await bcrypt.hash("secret123", 1);
+  const { server, request } = await startTestApp({
+    users: [
+      {
+        id: "user-untrusted-login",
+        name: "Untrusted Login User",
+        email: "untrusted-login@example.com",
+        passwordHash,
+        createdAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "https://evil.example",
+    },
+    body: JSON.stringify({
+      email: "untrusted-login@example.com",
+      password: "secret123",
+    }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(
+    data.message,
+    "This request origin is not allowed for session-authenticated changes.",
+  );
 });
 
 test("login keeps SameSite=Lax for same-site loopback requests", async (t) => {
@@ -237,6 +296,96 @@ test("login rejects invalid credentials", async (t) => {
 
   assert.equal(response.status, 401);
   assert.equal(data.message, "Invalid email or password.");
+});
+
+test("auth endpoints are rate limited", async (t) => {
+  const { server, request } = await startTestApp(
+    {},
+    {
+      rateLimits: {
+        auth: {
+          max: 1,
+          windowMs: 60_000,
+        },
+      },
+    },
+  );
+  t.after(() => closeServer(server));
+
+  await request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "", password: "" }),
+  });
+  const { response, data } = await request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "", password: "" }),
+  });
+
+  assert.equal(response.status, 429);
+  assert.equal(data.message, "Too many requests. Please try again later.");
+});
+
+test("central error middleware returns safe 503 for database failures", async (t) => {
+  const user = {
+    id: "user-db-fail",
+    name: "Db Fail User",
+    email: "db-fail@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { store, server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  store.getMonthlySummary = async () => {
+    const error = new Error("Can't connect to database with password secret");
+    error.code = "ECONNREFUSED";
+    throw error;
+  };
+
+  const { response, data } = await request("/api/dashboard?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 503);
+  assert.equal(data.message, "Service temporarily unavailable.");
+});
+
+test("central error middleware hides internal failures in production", async (t) => {
+  const user = {
+    id: "user-internal-fail",
+    name: "Internal Fail User",
+    email: "internal-fail@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { store, server, request } = await startTestApp(
+    { users: [user] },
+    {
+      env: {
+        NODE_ENV: "production",
+      },
+    },
+  );
+  t.after(() => closeServer(server));
+
+  store.getMonthlySummary = async () => {
+    throw new Error("internal secret details");
+  };
+
+  const { response, data } = await request("/api/dashboard?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 500);
+  assert.equal(data.message, "Something went wrong.");
 });
 
 test("login rejects missing credentials", async (t) => {

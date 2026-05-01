@@ -24,7 +24,7 @@ export function isLikelyDatabaseLeak(error) {
 /**
  * Map unknown errors to a safe client message; log full detail server-side.
  */
-export function safeErrorResponse(error, req) {
+export function safeErrorResponse(error, req, env = process.env) {
   if (error instanceof ClientError) {
     return { status: error.statusCode, message: error.message };
   }
@@ -59,7 +59,7 @@ export function safeErrorResponse(error, req) {
     stack: error?.stack,
   });
 
-  if (process.env.NODE_ENV === "production") {
+  if (env.NODE_ENV === "production") {
     return { status: 500, message: "Something went wrong." };
   }
 

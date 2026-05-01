@@ -39,9 +39,11 @@ server/   Express API, MySQL schema, and migration scripts
    Copy-Item .\client\.env.example .\client\.env
    ```
 
-   `JWT_SECRET` is required for the server. The API will refuse to start if it is missing.
+   `JWT_SECRET` is required for the server and must be at least 32 characters. The API will refuse to start if it is missing or too short.
 
    The server defaults to MySQL. Use `MYSQL_STORE=memory` only if you explicitly want to run against the bundled JSON snapshot during development.
+
+   For local client development, set `VITE_API_URL=http://localhost:5000/api` in `client/.env`. Production deployments should use the deployed API `/api` base URL.
 
 3. Start both apps:
 
@@ -90,8 +92,3 @@ The API runs on `http://localhost:5000`.
 - MySQL is the default persistence layer; the JSON snapshot is available only through the explicit `MYSQL_STORE=memory` mode.
 - Browser sessions are stored in an `HttpOnly` cookie rather than `localStorage`.
 - The database schema is defined in [server/sql/schema.sql](./server/sql/schema.sql).
-
-ACCOUNT:
-- Name:OjayAca                                                                                    
-  - Email: ojayacasio@gmail.com                                                                       
-  - Created: 2026-04-02T16:05:29.710Z   

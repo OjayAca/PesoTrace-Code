@@ -1906,29 +1906,41 @@ textarea { resize: vertical; }
     print-color-adjust: exact;
   }
 
-  .app-shell > :not(.report-page) {
+  .workspace-header,
+  .flash,
+  .report-actions,
+  .month-selector,
+  .modal-backdrop {
     display: none !important;
+  }
+
+  .app-shell,
+  .workspace-body {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
   }
 
   .report-page {
     display: grid !important;
     gap: 0.75rem;
+    padding: 1rem !important;
   }
 
   .report-toolbar {
-    margin-bottom: 0;
-  }
-
-  .report-actions {
-    display: none !important;
+    margin-bottom: 0.5rem;
   }
 
   .reports-grid {
+    display: grid !important;
     grid-template-columns: 1fr !important;
+    gap: 1.5rem !important;
   }
 
   .reports-grid .panel {
-    box-shadow: none;
+    box-shadow: none !important;
+    border: 1px solid #eee !important;
     break-inside: avoid;
     page-break-inside: avoid;
   }

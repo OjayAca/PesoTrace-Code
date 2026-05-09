@@ -35,6 +35,10 @@ function AppRoutes() {
         element={!user ? <AuthScreen /> : <Navigate to="/dashboard" replace />}
       />
       <Route
+        path="/reset-password"
+        element={!user ? <AuthScreen /> : <Navigate to="/dashboard" replace />}
+      />
+      <Route
         path="/dashboard/*"
         element={user ? <Dashboard /> : <Navigate to="/auth" replace />}
       />

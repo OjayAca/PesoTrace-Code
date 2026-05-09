@@ -804,6 +804,12 @@ textarea { resize: vertical; }
   font-size: 0.9rem;
 }
 
+.form-success {
+  color: var(--success);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .banner-error {
   display: flex;
   align-items: center;

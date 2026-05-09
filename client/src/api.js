@@ -82,6 +82,18 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  requestPasswordReset(payload) {
+    return request("/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  confirmPasswordReset(payload) {
+    return request("/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
   login(payload) {
     return request("/auth/login", {
       method: "POST",

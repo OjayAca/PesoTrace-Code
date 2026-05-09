@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { getRecurringTemplates } from "../finance.js";
+import { checkPasswordChangeAllowed, getPasswordFailureLockout } from "./auth.js";
 import { ClientError } from "../utils/errors.js";
 import { getBcryptRounds } from "../utils/bcryptConfig.js";
 import { sanitizeUser, isValidEmail, isDuplicateEntryError, buildUserPreferences } from "../utils/helpers.js";
@@ -104,9 +105,17 @@ export function updatePassword(store) {
       throw new ClientError("New password must be at least 6 characters.");
     }
 
+    checkPasswordChangeAllowed(user);
+
     const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
 
     if (!isMatch) {
+      const updatedUser = await store.incrementUserPasswordFailure(
+        req.auth.userId,
+        getPasswordFailureLockout(),
+      );
+
+      checkPasswordChangeAllowed(updatedUser || user);
       throw new ClientError("Current password is incorrect.", 401);
     }
 
@@ -114,6 +123,7 @@ export function updatePassword(store) {
       req.auth.userId,
       await bcrypt.hash(newPassword, getBcryptRounds()),
     );
+    await store.resetUserPasswordFailures(req.auth.userId);
 
     return res.json({ success: true });
   };

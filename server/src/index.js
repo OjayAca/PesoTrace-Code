@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureJwtSecret } from "./auth.js";
+import { ensureEmailConfig } from "./email.js";
 import { createMemoryStore, createStoreFromEnv, normalizeStoreData } from "./store.js";
 import { createApp } from "./app.js";
 
@@ -57,6 +58,7 @@ export async function createRuntimeStore(env = process.env) {
 
 export function validateRuntimeConfig(env = process.env) {
   ensureJwtSecret(env);
+  ensureEmailConfig(env);
 }
 
 export async function startServer() {

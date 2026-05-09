@@ -7,6 +7,7 @@ import { DEFAULT_CATEGORIES } from "./finance.js";
 import { isAllowedOrigin } from "./utils/helpers.js";
 import { safeErrorResponse } from "./utils/errors.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
+import { createEmailService } from "./email.js";
 import * as authController from "./controllers/auth.js";
 import * as financeController from "./controllers/finance.js";
 import * as settingsController from "./controllers/settings.js";
@@ -28,6 +29,7 @@ export function createApp({
   clientOrigin = "http://localhost:5173",
   env = process.env,
   rateLimits = {},
+  emailService = createEmailService(env),
 } = {}) {
   if (!store) {
     throw new Error("A store is required.");
@@ -37,10 +39,17 @@ export function createApp({
     "getSnapshot",
     "getUserById",
     "getUserByEmail",
+    "getUserByPasswordResetTokenHash",
     "createUser",
     "updateUserProfile",
     "updateUserPreferences",
     "updateUserPassword",
+    "setPasswordResetToken",
+    "clearPasswordResetToken",
+    "incrementUserLoginFailure",
+    "resetUserLoginFailures",
+    "incrementUserPasswordFailure",
+    "resetUserPasswordFailures",
     "getUserOverview",
     "getUserFinanceSnapshot",
     "getMonthlySummary",
@@ -76,6 +85,14 @@ export function createApp({
     max: 5,
     ...rateLimits.password,
   });
+  const passwordResetRateLimit = createLimiter({
+    max: 5,
+    ...rateLimits.passwordReset,
+  });
+  const settingsRateLimit = createLimiter({
+    max: 30,
+    ...rateLimits.settings,
+  });
 
   if (env.NODE_ENV === "production") {
     app.set("trust proxy", 1);
@@ -106,6 +123,8 @@ export function createApp({
   // Auth
   app.post("/api/auth/register", requireTrustedAuthOrigin, registerRateLimit, asyncHandler(authController.register(store)));
   app.post("/api/auth/login", requireTrustedAuthOrigin, loginRateLimit, asyncHandler(authController.login(store)));
+  app.post("/api/auth/password-reset/request", requireTrustedAuthOrigin, passwordResetRateLimit, asyncHandler(authController.requestPasswordReset(store, emailService)));
+  app.post("/api/auth/password-reset/confirm", requireTrustedAuthOrigin, passwordResetRateLimit, asyncHandler(authController.confirmPasswordReset(store)));
   app.post("/api/auth/logout", requireAuth, requireTrustedSessionOrigin, asyncHandler(authController.logout()));
   app.get("/api/auth/me", requireAuth, asyncHandler(authController.me(store)));
 
@@ -123,12 +142,12 @@ export function createApp({
   app.delete("/api/recurring-templates/:id", requireAuth, requireTrustedSessionOrigin, asyncHandler(financeController.deleteRecurringTemplate(store)));
 
   // Settings
-  app.get("/api/settings", requireAuth, asyncHandler(settingsController.getSettings(store)));
-  app.put("/api/settings/profile", requireAuth, requireTrustedSessionOrigin, asyncHandler(settingsController.updateProfile(store)));
-  app.put("/api/settings/preferences", requireAuth, requireTrustedSessionOrigin, asyncHandler(settingsController.updatePreferences(store)));
+  app.get("/api/settings", requireAuth, settingsRateLimit, asyncHandler(settingsController.getSettings(store)));
+  app.put("/api/settings/profile", requireAuth, requireTrustedSessionOrigin, settingsRateLimit, asyncHandler(settingsController.updateProfile(store)));
+  app.put("/api/settings/preferences", requireAuth, requireTrustedSessionOrigin, settingsRateLimit, asyncHandler(settingsController.updatePreferences(store)));
   app.put("/api/settings/password", requireAuth, requireTrustedSessionOrigin, passwordRateLimit, asyncHandler(settingsController.updatePassword(store)));
-  app.get("/api/settings/export", requireAuth, asyncHandler(settingsController.exportData(store)));
-  app.delete("/api/settings/data", requireAuth, requireTrustedSessionOrigin, asyncHandler(settingsController.clearData(store)));
+  app.get("/api/settings/export", requireAuth, settingsRateLimit, asyncHandler(settingsController.exportData(store)));
+  app.delete("/api/settings/data", requireAuth, requireTrustedSessionOrigin, settingsRateLimit, asyncHandler(settingsController.clearData(store)));
 
   app.use((error, req, res, next) => {
     if (res.headersSent) {

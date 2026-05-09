@@ -851,7 +851,7 @@ export function Dashboard() {
         ...(current || {}),
         user: response.user,
       }));
-      pushFlash("success", "Profile updated.");
+      pushFlash("success", response.message || "Profile updated.");
     } catch (profileError) {
       setError(profileError.message);
     } finally {

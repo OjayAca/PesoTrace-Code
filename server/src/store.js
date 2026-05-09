@@ -261,6 +261,16 @@ function normalizeUser(user) {
     name: String(user?.name || "").trim(),
     email: String(user?.email || "").trim().toLowerCase(),
     passwordHash: String(user?.passwordHash || ""),
+    passwordResetTokenHash: user?.passwordResetTokenHash
+      ? String(user.passwordResetTokenHash)
+      : null,
+    passwordResetExpiresAt: user?.passwordResetExpiresAt
+      ? toIsoDateTime(user.passwordResetExpiresAt)
+      : null,
+    failedLoginAttempts: Number(user?.failedLoginAttempts || 0),
+    loginLockedUntil: user?.loginLockedUntil ? toIsoDateTime(user.loginLockedUntil) : null,
+    failedPasswordAttempts: Number(user?.failedPasswordAttempts || 0),
+    passwordLockedUntil: user?.passwordLockedUntil ? toIsoDateTime(user.passwordLockedUntil) : null,
     createdAt: toIsoDateTime(user?.createdAt),
     preferences: {
       preferredTheme: user?.preferences?.preferredTheme === "dark" ? "dark" : "light",
@@ -339,6 +349,12 @@ function normalizeUserFromRow(row) {
     name: row.name,
     email: row.email,
     passwordHash: row.passwordHash,
+    passwordResetTokenHash: row.passwordResetTokenHash,
+    passwordResetExpiresAt: row.passwordResetExpiresAt,
+    failedLoginAttempts: row.failedLoginAttempts,
+    loginLockedUntil: row.loginLockedUntil,
+    failedPasswordAttempts: row.failedPasswordAttempts,
+    passwordLockedUntil: row.passwordLockedUntil,
     createdAt: row.createdAt,
     preferences: {
       preferredTheme: row.preferredTheme,
@@ -436,6 +452,11 @@ export function createMemoryStore(seedData = {}) {
       const user = data.users.find((entry) => entry.email === normalizedEmail) || null;
       return user ? normalizeUser(clone(user)) : null;
     },
+    async getUserByPasswordResetTokenHash(tokenHash) {
+      const user =
+        data.users.find((entry) => entry.passwordResetTokenHash === tokenHash) || null;
+      return user ? normalizeUser(clone(user)) : null;
+    },
     async createUser(user) {
       const nextUser = normalizeUser(user);
 
@@ -478,6 +499,86 @@ export function createMemoryStore(seedData = {}) {
       }
 
       user.passwordHash = String(passwordHash || "");
+      user.passwordResetTokenHash = null;
+      user.passwordResetExpiresAt = null;
+      user.failedLoginAttempts = 0;
+      user.loginLockedUntil = null;
+      user.failedPasswordAttempts = 0;
+      user.passwordLockedUntil = null;
+      return true;
+    },
+    async setPasswordResetToken(id, tokenHash, expiresAt) {
+      const user = data.users.find((entry) => entry.id === id) || null;
+
+      if (!user) {
+        return false;
+      }
+
+      user.passwordResetTokenHash = String(tokenHash || "");
+      user.passwordResetExpiresAt = toIsoDateTime(expiresAt);
+      return true;
+    },
+    async clearPasswordResetToken(id) {
+      const user = data.users.find((entry) => entry.id === id) || null;
+
+      if (!user) {
+        return false;
+      }
+
+      user.passwordResetTokenHash = null;
+      user.passwordResetExpiresAt = null;
+      return true;
+    },
+    async incrementUserLoginFailure(id, { threshold, lockedUntil }) {
+      const user = data.users.find((entry) => entry.id === id) || null;
+
+      if (!user) {
+        return null;
+      }
+
+      user.failedLoginAttempts = Number(user.failedLoginAttempts || 0) + 1;
+
+      if (user.failedLoginAttempts >= threshold) {
+        user.loginLockedUntil = toIsoDateTime(lockedUntil);
+      }
+
+      return normalizeUser(clone(user));
+    },
+    async resetUserLoginFailures(id) {
+      const user = data.users.find((entry) => entry.id === id) || null;
+
+      if (!user) {
+        return false;
+      }
+
+      user.failedLoginAttempts = 0;
+      user.loginLockedUntil = null;
+      return true;
+    },
+    async incrementUserPasswordFailure(id, { threshold, lockedUntil }) {
+      const user = data.users.find((entry) => entry.id === id) || null;
+
+      if (!user) {
+        return null;
+      }
+
+      user.failedPasswordAttempts = Number(user.failedPasswordAttempts || 0) + 1;
+
+      if (user.failedPasswordAttempts >= threshold) {
+        user.passwordLockedUntil = toIsoDateTime(lockedUntil);
+      }
+
+      return normalizeUser(clone(user));
+    },
+    async resetUserPasswordFailures(id) {
+      const user = data.users.find((entry) => entry.id === id) || null;
+
+      if (!user) {
+        return false;
+      }
+
+      user.failedPasswordAttempts = 0;
+      user.passwordLockedUntil = null;
       return true;
     },
     async createTransaction(transaction) {
@@ -714,6 +815,18 @@ export function createMySqlStore(env = process.env) {
     return rows[0] ? mapper(rows[0]) : null;
   }
 
+  const userSelectColumns = `
+    id, name, email, password_hash AS passwordHash,
+    password_reset_token_hash AS passwordResetTokenHash,
+    password_reset_expires_at AS passwordResetExpiresAt,
+    failed_login_attempts AS failedLoginAttempts,
+    login_locked_until AS loginLockedUntil,
+    failed_password_attempts AS failedPasswordAttempts,
+    password_locked_until AS passwordLockedUntil,
+    preferred_theme AS preferredTheme, default_budget AS defaultBudget,
+    currency, created_at AS createdAt
+  `;
+
   async function runInTransaction(work) {
     const pool = await getPool();
     const connection = await pool.getConnection();
@@ -735,8 +848,7 @@ export function createMySqlStore(env = process.env) {
     const pool = await getPool();
     const [users, transactions, budgets, recurringTemplates] = await Promise.all([
       pool.query(
-        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
-                default_budget AS defaultBudget, currency, created_at AS createdAt
+        `SELECT ${userSelectColumns}
          FROM users
          ORDER BY created_at ASC, id ASC`,
       ),
@@ -773,8 +885,7 @@ export function createMySqlStore(env = process.env) {
     const pool = await getPool();
     const [users, transactions, budgets, recurringTemplates] = await Promise.all([
       pool.query(
-        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
-                default_budget AS defaultBudget, currency, created_at AS createdAt
+        `SELECT ${userSelectColumns}
          FROM users
          WHERE id = ?
          LIMIT 1`,
@@ -1159,8 +1270,7 @@ export function createMySqlStore(env = process.env) {
     getReports,
     async getUserById(id) {
       return getOne(
-        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
-                default_budget AS defaultBudget, currency, created_at AS createdAt
+        `SELECT ${userSelectColumns}
          FROM users
          WHERE id = ?
          LIMIT 1`,
@@ -1170,12 +1280,21 @@ export function createMySqlStore(env = process.env) {
     },
     async getUserByEmail(email) {
       return getOne(
-        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
-                default_budget AS defaultBudget, currency, created_at AS createdAt
+        `SELECT ${userSelectColumns}
          FROM users
          WHERE email = ?
          LIMIT 1`,
         [String(email || "").trim().toLowerCase()],
+        normalizeUserFromRow,
+      );
+    },
+    async getUserByPasswordResetTokenHash(tokenHash) {
+      return getOne(
+        `SELECT ${userSelectColumns}
+         FROM users
+         WHERE password_reset_token_hash = ?
+         LIMIT 1`,
+        [String(tokenHash || "")],
         normalizeUserFromRow,
       );
     },
@@ -1186,6 +1305,12 @@ export function createMySqlStore(env = process.env) {
            u.name,
            u.email,
            u.password_hash AS passwordHash,
+           u.password_reset_token_hash AS passwordResetTokenHash,
+           u.password_reset_expires_at AS passwordResetExpiresAt,
+           u.failed_login_attempts AS failedLoginAttempts,
+           u.login_locked_until AS loginLockedUntil,
+           u.failed_password_attempts AS failedPasswordAttempts,
+           u.password_locked_until AS passwordLockedUntil,
            u.preferred_theme AS preferredTheme,
            u.default_budget AS defaultBudget,
            u.currency,
@@ -1221,13 +1346,23 @@ export function createMySqlStore(env = process.env) {
 
       await db.execute(
         `INSERT INTO users (
-           id, name, email, password_hash, preferred_theme, default_budget, currency, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           id, name, email, password_hash,
+           password_reset_token_hash, password_reset_expires_at,
+           failed_login_attempts, login_locked_until,
+           failed_password_attempts, password_locked_until,
+           preferred_theme, default_budget, currency, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           normalizedUser.id,
           normalizedUser.name,
           normalizedUser.email,
           normalizedUser.passwordHash,
+          normalizedUser.passwordResetTokenHash,
+          toMySqlDateTime(normalizedUser.passwordResetExpiresAt),
+          normalizedUser.failedLoginAttempts,
+          toMySqlDateTime(normalizedUser.loginLockedUntil),
+          normalizedUser.failedPasswordAttempts,
+          toMySqlDateTime(normalizedUser.passwordLockedUntil),
           normalizedUser.preferences.preferredTheme,
           normalizedUser.preferences.defaultBudget,
           normalizedUser.preferences.currency,
@@ -1237,8 +1372,7 @@ export function createMySqlStore(env = process.env) {
 
       return getOneWithExecutor(
         db,
-        `SELECT id, name, email, password_hash AS passwordHash, preferred_theme AS preferredTheme,
-                default_budget AS defaultBudget, currency, created_at AS createdAt
+        `SELECT ${userSelectColumns}
          FROM users
          WHERE id = ?
          LIMIT 1`,
@@ -1285,9 +1419,101 @@ export function createMySqlStore(env = process.env) {
       const pool = await getPool();
       const [result] = await pool.execute(
         `UPDATE users
-         SET password_hash = ?
+         SET password_hash = ?,
+             password_reset_token_hash = NULL,
+             password_reset_expires_at = NULL,
+             failed_login_attempts = 0,
+             login_locked_until = NULL,
+             failed_password_attempts = 0,
+             password_locked_until = NULL
          WHERE id = ?`,
         [String(passwordHash || ""), id],
+      );
+
+      return result.affectedRows > 0;
+    },
+    async setPasswordResetToken(id, tokenHash, expiresAt) {
+      const pool = await getPool();
+      const [result] = await pool.execute(
+        `UPDATE users
+         SET password_reset_token_hash = ?,
+             password_reset_expires_at = ?
+         WHERE id = ?`,
+        [String(tokenHash || ""), toMySqlDateTime(expiresAt), id],
+      );
+
+      return result.affectedRows > 0;
+    },
+    async clearPasswordResetToken(id) {
+      const pool = await getPool();
+      const [result] = await pool.execute(
+        `UPDATE users
+         SET password_reset_token_hash = NULL,
+             password_reset_expires_at = NULL
+         WHERE id = ?`,
+        [id],
+      );
+
+      return result.affectedRows > 0;
+    },
+    async incrementUserLoginFailure(id, { threshold, lockedUntil }) {
+      const pool = await getPool();
+      const [result] = await pool.execute(
+        `UPDATE users
+         SET failed_login_attempts = failed_login_attempts + 1,
+             login_locked_until = CASE
+               WHEN failed_login_attempts + 1 >= ? THEN ?
+               ELSE login_locked_until
+             END
+         WHERE id = ?`,
+        [Number(threshold || 5), toMySqlDateTime(lockedUntil), id],
+      );
+
+      if (result.affectedRows === 0) {
+        return null;
+      }
+
+      return this.getUserById(id);
+    },
+    async resetUserLoginFailures(id) {
+      const pool = await getPool();
+      const [result] = await pool.execute(
+        `UPDATE users
+         SET failed_login_attempts = 0,
+             login_locked_until = NULL
+         WHERE id = ?`,
+        [id],
+      );
+
+      return result.affectedRows > 0;
+    },
+    async incrementUserPasswordFailure(id, { threshold, lockedUntil }) {
+      const pool = await getPool();
+      const [result] = await pool.execute(
+        `UPDATE users
+         SET failed_password_attempts = failed_password_attempts + 1,
+             password_locked_until = CASE
+               WHEN failed_password_attempts + 1 >= ? THEN ?
+               ELSE password_locked_until
+             END
+         WHERE id = ?`,
+        [Number(threshold || 5), toMySqlDateTime(lockedUntil), id],
+      );
+
+      if (result.affectedRows === 0) {
+        return null;
+      }
+
+      return this.getUserById(id);
+    },
+    async resetUserPasswordFailures(id) {
+      const pool = await getPool();
+      const [result] = await pool.execute(
+        `UPDATE users
+         SET failed_password_attempts = 0,
+             password_locked_until = NULL
+         WHERE id = ?`,
+        [id],
       );
 
       return result.affectedRows > 0;

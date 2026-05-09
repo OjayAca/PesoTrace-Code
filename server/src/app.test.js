@@ -22,11 +22,18 @@ function closeServer(server) {
 
 async function startTestApp(seedData = {}, appOptions = {}) {
   const store = createMemoryStore(seedData);
+  const sentEmails = [];
+  const emailService = appOptions.emailService || {
+    async sendPasswordReset(user, token) {
+      sentEmails.push({ type: "password-reset", user, token });
+    },
+  };
 
   const app = createApp({
     store,
     clientOrigin: "http://localhost:5173",
     ...appOptions,
+    emailService,
   });
 
   const server = await new Promise((resolve) => {
@@ -41,7 +48,7 @@ async function startTestApp(seedData = {}, appOptions = {}) {
     return { response, data };
   }
 
-  return { store, server, request };
+  return { store, server, request, sentEmails };
 }
 
 test("register creates a user, sets a session cookie, and omits passwordHash", async (t) => {
@@ -296,6 +303,114 @@ test("login rejects invalid credentials", async (t) => {
 
   assert.equal(response.status, 401);
   assert.equal(data.message, "Invalid email or password.");
+});
+
+test("login locks out after consecutive failures for the same user", async (t) => {
+  const passwordHash = await bcrypt.hash("secret123", 1);
+  const { store, server, request } = await startTestApp({
+    users: [
+      {
+        id: "user-lock-login",
+        name: "Lock Login User",
+        email: "lock-login@example.com",
+        passwordHash,
+        createdAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  for (let index = 0; index < 4; index += 1) {
+    const failedLogin = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "lock-login@example.com",
+        password: `wrong-${index}`,
+      }),
+    });
+
+    assert.equal(failedLogin.response.status, 401);
+  }
+
+  const lockedLogin = await request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: "lock-login@example.com",
+      password: "wrong-final",
+    }),
+  });
+
+  assert.equal(lockedLogin.response.status, 429);
+  assert.equal(lockedLogin.data.message, "Too many failed sign-in attempts. Please try again later.");
+
+  const stillLocked = await request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: "lock-login@example.com",
+      password: "secret123",
+    }),
+  });
+
+  assert.equal(stillLocked.response.status, 429);
+  const snapshot = await store.getSnapshot();
+  assert.equal(snapshot.users[0].failedLoginAttempts, 5);
+  assert.ok(snapshot.users[0].loginLockedUntil);
+});
+
+test("password reset sends a reset email and updates the password with a valid token", async (t) => {
+  const passwordHash = await bcrypt.hash("secret123", 1);
+  const { store, server, request, sentEmails } = await startTestApp({
+    users: [
+      {
+        id: "user-reset",
+        name: "Reset User",
+        email: "reset@example.com",
+        passwordHash,
+        createdAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const requestResponse = await request("/api/auth/password-reset/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "reset@example.com" }),
+  });
+
+  assert.equal(requestResponse.response.status, 200);
+  assert.equal(
+    requestResponse.data.message,
+    "If that email is registered, a password reset link will be sent.",
+  );
+  assert.equal(sentEmails.length, 1);
+  assert.equal(sentEmails[0].type, "password-reset");
+
+  const repeatedRequest = await request("/api/auth/password-reset/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "reset@example.com" }),
+  });
+
+  assert.equal(repeatedRequest.response.status, 200);
+  assert.equal(sentEmails.length, 1);
+
+  const confirmResponse = await request("/api/auth/password-reset/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: sentEmails[0].token,
+      password: "newsecret456",
+    }),
+  });
+
+  assert.equal(confirmResponse.response.status, 200);
+  const snapshot = await store.getSnapshot();
+  assert.equal(snapshot.users[0].passwordResetTokenHash, null);
+  assert.equal(await bcrypt.compare("newsecret456", snapshot.users[0].passwordHash), true);
 });
 
 test("auth endpoints are rate limited", async (t) => {
@@ -1473,6 +1588,59 @@ test("settings preferences and password updates work for the authenticated user"
   assert.equal(passwordResponse.response.status, 200);
   snapshot = await store.getSnapshot();
   assert.equal(await bcrypt.compare("newsecret456", snapshot.users[0].passwordHash), true);
+});
+
+test("settings password changes lock out after consecutive current password failures", async (t) => {
+  const user = {
+    id: "user-password-lock",
+    name: "Password Lock User",
+    email: "password-lock@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { store, server, request } = await startTestApp({
+    users: [user],
+  });
+  t.after(() => closeServer(server));
+
+  for (let index = 0; index < 4; index += 1) {
+    const failedPasswordChange = await request("/api/settings/password", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        currentPassword: `wrong-${index}`,
+        newPassword: "newsecret456",
+      }),
+    });
+
+    assert.equal(failedPasswordChange.response.status, 401);
+  }
+
+  const lockedPasswordChange = await request("/api/settings/password", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      currentPassword: "wrong-final",
+      newPassword: "newsecret456",
+    }),
+  });
+
+  assert.equal(lockedPasswordChange.response.status, 429);
+  assert.equal(
+    lockedPasswordChange.data.message,
+    "Too many failed password attempts. Please try again later.",
+  );
+
+  const snapshot = await store.getSnapshot();
+  assert.equal(snapshot.users[0].failedPasswordAttempts, 5);
+  assert.ok(snapshot.users[0].passwordLockedUntil);
 });
 
 test("recurring templates are returned in reports and can be exported", async (t) => {

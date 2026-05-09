@@ -1,6 +1,17 @@
 import { Moon, Sun, AlertCircle } from "lucide-react";
 
-export function LoginScreen({ theme, setTheme, submitting, error, form, setForm, onSubmit, onSwitch }) {
+export function LoginScreen({
+  theme,
+  setTheme,
+  submitting,
+  error,
+  message,
+  form,
+  setForm,
+  onSubmit,
+  onSwitch,
+  onForgotPassword,
+}) {
   return (
     <section className="panel auth-panel auth-panel-login">
       <div className="auth-panel-top">
@@ -63,10 +74,19 @@ export function LoginScreen({ theme, setTheme, submitting, error, form, setForm,
           </p>
         ) : null}
 
+        {message ? <p className="form-success">{message}</p> : null}
+
         <button className="primary-button" type="submit" disabled={submitting}>
           {submitting ? "Please wait..." : "Sign in"}
         </button>
       </form>
+
+      <p className="auth-switch">
+        Forgot your password?
+        <button type="button" className="text-button" onClick={onForgotPassword}>
+          Reset it
+        </button>
+      </p>
 
       <p className="auth-switch">
         New here?

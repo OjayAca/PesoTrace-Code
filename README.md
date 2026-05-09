@@ -41,6 +41,8 @@ server/   Express API, MySQL schema, and migration scripts
 
    `JWT_SECRET` is required for the server and must be at least 32 characters. The API will refuse to start if it is missing or too short.
 
+   Production also requires email delivery for password reset links. Set `APP_BASE_URL`, `EMAIL_PROVIDER=resend`, `EMAIL_FROM`, and `RESEND_API_KEY` in `server/.env`.
+
    The server defaults to MySQL. Use `MYSQL_STORE=memory` only if you explicitly want to run against the bundled JSON snapshot during development.
 
    For local client development, set `VITE_API_URL=http://localhost:5000/api` in `client/.env`. Production deployments should use the deployed API `/api` base URL.

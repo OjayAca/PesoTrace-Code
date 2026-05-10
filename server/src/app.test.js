@@ -1,11 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import bcrypt from "bcryptjs";
-import { createToken } from "./auth.js";
+import { AUTH_COOKIE_NAME, CSRF_COOKIE_NAME, createToken } from "./auth.js";
 import { createApp } from "./app.js";
 import { createMemoryStore } from "./store.js";
 
-process.env.JWT_SECRET = "test-jwt-secret-with-at-least-32-chars";
+const TEST_JWT_SECRET = "test-jwt-secret-with-at-least-32-chars";
+const previousJwtSecret = process.env.JWT_SECRET;
+
+test.before(() => {
+  process.env.JWT_SECRET = TEST_JWT_SECRET;
+});
+
+test.after(() => {
+  if (previousJwtSecret === undefined) {
+    delete process.env.JWT_SECRET;
+    return;
+  }
+
+  process.env.JWT_SECRET = previousJwtSecret;
+});
 
 function closeServer(server) {
   return new Promise((resolve, reject) => {
@@ -18,6 +32,22 @@ function closeServer(server) {
       resolve();
     });
   });
+}
+
+function getCookieValue(setCookieHeader, name) {
+  const match = new RegExp(`(?:^|,\\s*)${name}=([^;]*)`).exec(setCookieHeader);
+  return match ? match[1] : "";
+}
+
+function getSessionCookieHeader(setCookieHeader) {
+  return [
+    `${AUTH_COOKIE_NAME}=${getCookieValue(setCookieHeader, AUTH_COOKIE_NAME)}`,
+    `${CSRF_COOKIE_NAME}=${getCookieValue(setCookieHeader, CSRF_COOKIE_NAME)}`,
+  ].join("; ");
+}
+
+function getCsrfToken(setCookieHeader) {
+  return getCookieValue(setCookieHeader, CSRF_COOKIE_NAME);
 }
 
 async function startTestApp(seedData = {}, appOptions = {}) {
@@ -50,6 +80,50 @@ async function startTestApp(seedData = {}, appOptions = {}) {
 
   return { store, server, request, sentEmails };
 }
+
+test("production redirects plain HTTP requests to HTTPS", async (t) => {
+  const { server, request } = await startTestApp(
+    {},
+    {
+      env: {
+        NODE_ENV: "production",
+      },
+    },
+  );
+  t.after(() => closeServer(server));
+
+  const { response } = await request("/api/health", {
+    redirect: "manual",
+    headers: {
+      "X-Forwarded-Host": "api.pesotrace.example",
+      "X-Forwarded-Proto": "http",
+    },
+  });
+
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://api.pesotrace.example/api/health");
+});
+
+test("production accepts requests already marked HTTPS by the proxy", async (t) => {
+  const { server, request } = await startTestApp(
+    {},
+    {
+      env: {
+        NODE_ENV: "production",
+      },
+    },
+  );
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/health", {
+    headers: {
+      "X-Forwarded-Proto": "https",
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(data.status, "ok");
+});
 
 test("register creates a user, sets a session cookie, and omits passwordHash", async (t) => {
   const { store, server, request } = await startTestApp();
@@ -496,6 +570,7 @@ test("central error middleware hides internal failures in production", async (t)
   const { response, data } = await request("/api/dashboard?month=2026-04", {
     headers: {
       Authorization: `Bearer ${token}`,
+      "X-Forwarded-Proto": "https",
     },
   });
 
@@ -545,17 +620,17 @@ test("me returns the authenticated user for a valid token", async (t) => {
   assert.equal("passwordHash" in data.user, false);
 });
 
-test("me rejects requests without a token", async (t) => {
+test("me returns no user without a token", async (t) => {
   const { server, request } = await startTestApp();
   t.after(() => closeServer(server));
 
   const { response, data } = await request("/api/auth/me");
 
-  assert.equal(response.status, 401);
-  assert.equal(data.message, "Authentication is required.");
+  assert.equal(response.status, 200);
+  assert.deepEqual(data, { user: null, csrfToken: "" });
 });
 
-test("me rejects invalid tokens", async (t) => {
+test("me returns no user for invalid tokens", async (t) => {
   const { server, request } = await startTestApp();
   t.after(() => closeServer(server));
 
@@ -565,11 +640,11 @@ test("me rejects invalid tokens", async (t) => {
     },
   });
 
-  assert.equal(response.status, 401);
-  assert.equal(data.message, "Your session is invalid or expired.");
+  assert.equal(response.status, 200);
+  assert.deepEqual(data, { user: null, csrfToken: "" });
 });
 
-test("malformed session cookies fail closed with a 401", async (t) => {
+test("malformed session cookies return no user and clear session cookies", async (t) => {
   const { server, request } = await startTestApp();
   t.after(() => closeServer(server));
 
@@ -579,8 +654,10 @@ test("malformed session cookies fail closed with a 401", async (t) => {
     },
   });
 
-  assert.equal(response.status, 401);
-  assert.equal(data.message, "Your session is invalid or expired.");
+  assert.equal(response.status, 200);
+  assert.deepEqual(data, { user: null, csrfToken: "" });
+  assert.match(response.headers.get("set-cookie") || "", /pesotrace-session=;/);
+  assert.match(response.headers.get("set-cookie") || "", /pesotrace-csrf=;/);
 });
 
 test("me accepts the session cookie set during login", async (t) => {
@@ -616,6 +693,33 @@ test("me accepts the session cookie set during login", async (t) => {
 
   assert.equal(response.status, 200);
   assert.equal(data.user.email, "cookie@example.com");
+  assert.ok(data.csrfToken);
+});
+
+test("cookie sessions are renewed near expiration", async (t) => {
+  const user = {
+    id: "user-cookie-renewal",
+    name: "Cookie Renewal User",
+    email: "cookie-renewal@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const expiringToken = createToken(user, { expiresIn: "10m" });
+  const { server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/auth/me", {
+    headers: {
+      Cookie: `${AUTH_COOKIE_NAME}=${expiringToken}`,
+    },
+  });
+  const setCookieHeader = response.headers.get("set-cookie") || "";
+
+  assert.equal(response.status, 200);
+  assert.equal(data.user.email, "cookie-renewal@example.com");
+  assert.match(setCookieHeader, /pesotrace-session=/);
+  assert.match(setCookieHeader, /pesotrace-csrf=/);
+  assert.ok(data.csrfToken);
 });
 
 test("logout clears the session cookie", async (t) => {
@@ -649,16 +753,69 @@ test("logout clears the session cookie", async (t) => {
   const { response, data } = await request("/api/auth/logout", {
     method: "POST",
     headers: {
-      Cookie: cookieHeader.split(";")[0],
+      Cookie: getSessionCookieHeader(cookieHeader),
       Origin: "http://localhost:5173",
+      "X-CSRF-Token": getCsrfToken(cookieHeader),
     },
   });
 
   assert.equal(response.status, 200);
   assert.deepEqual(data, { success: true });
   assert.match(response.headers.get("set-cookie") || "", /pesotrace-session=;/);
+  assert.match(response.headers.get("set-cookie") || "", /pesotrace-csrf=;/);
   assert.match(response.headers.get("set-cookie") || "", /SameSite=None/i);
   assert.match(response.headers.get("set-cookie") || "", /Secure/i);
+});
+
+test("logout revokes the current JWT", async (t) => {
+  const passwordHash = await bcrypt.hash("secret123", 1);
+  const { server, request } = await startTestApp({
+    users: [
+      {
+        id: "user-logout-revoked",
+        name: "Logout Revoked User",
+        email: "logout-revoked@example.com",
+        passwordHash,
+        createdAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const loginResponse = await request("/api/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "http://localhost:5173",
+    },
+    body: JSON.stringify({
+      email: "logout-revoked@example.com",
+      password: "secret123",
+    }),
+  });
+
+  const cookieHeader = loginResponse.response.headers.get("set-cookie") || "";
+  const sessionCookie = getSessionCookieHeader(cookieHeader);
+
+  await request("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      Cookie: sessionCookie,
+      Origin: "http://localhost:5173",
+      "X-CSRF-Token": getCsrfToken(cookieHeader),
+    },
+  });
+
+  const { response, data } = await request("/api/auth/me", {
+    headers: {
+      Cookie: sessionCookie,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(data, { user: null, csrfToken: "" });
+  assert.match(response.headers.get("set-cookie") || "", /pesotrace-session=;/);
+  assert.match(response.headers.get("set-cookie") || "", /pesotrace-csrf=;/);
 });
 
 test("cookie-authenticated mutations reject requests without a trusted origin", async (t) => {
@@ -738,8 +895,9 @@ test("cookie-authenticated mutations accept the configured client origin", async
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Cookie: cookieHeader.split(";")[0],
+      Cookie: getSessionCookieHeader(cookieHeader),
       Origin: "http://localhost:5173",
+      "X-CSRF-Token": getCsrfToken(cookieHeader),
     },
     body: JSON.stringify({
       title: "Allowed request",
@@ -753,6 +911,55 @@ test("cookie-authenticated mutations accept the configured client origin", async
 
   assert.equal(response.status, 201);
   assert.equal(data.transaction.title, "Allowed request");
+});
+
+test("cookie-authenticated mutations reject missing CSRF tokens", async (t) => {
+  const passwordHash = await bcrypt.hash("secret123", 1);
+  const { server, request } = await startTestApp({
+    users: [
+      {
+        id: "user-csrf-missing",
+        name: "Missing Csrf User",
+        email: "csrf-missing@example.com",
+        passwordHash,
+        createdAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const loginResponse = await request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: "csrf-missing@example.com",
+      password: "secret123",
+    }),
+  });
+
+  const cookieHeader = loginResponse.response.headers.get("set-cookie") || "";
+  const { response, data } = await request("/api/transactions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: getSessionCookieHeader(cookieHeader),
+      Origin: "http://localhost:5173",
+    },
+    body: JSON.stringify({
+      title: "Missing token",
+      amount: 100,
+      transactionDate: "2026-04-12",
+      type: "expense",
+      category: "Food",
+      notes: "",
+    }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(
+    data.message,
+    "A valid CSRF token is required for session-authenticated changes.",
+  );
 });
 
 test("bearer-authenticated mutations do not require an origin header", async (t) => {
@@ -1464,6 +1671,57 @@ test("transactions support category and type filters", async (t) => {
   assert.equal(filtered.data.transactions[0].title, "Freelance");
 });
 
+test("transactions reject titles and notes that exceed API limits", async (t) => {
+  const user = {
+    id: "user-transaction-length",
+    name: "Transaction Length User",
+    email: "tx-length@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  const longTitle = await request("/api/transactions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      title: "x".repeat(121),
+      amount: 100,
+      type: "expense",
+      category: "Food",
+      notes: "",
+      transactionDate: "2026-04-12",
+    }),
+  });
+
+  assert.equal(longTitle.response.status, 400);
+  assert.equal(longTitle.data.message, "Transaction title must be 120 characters or fewer.");
+
+  const longNotes = await request("/api/transactions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      title: "Valid title",
+      amount: 100,
+      type: "expense",
+      category: "Food",
+      notes: "x".repeat(2001),
+      transactionDate: "2026-04-12",
+    }),
+  });
+
+  assert.equal(longNotes.response.status, 400);
+  assert.equal(longNotes.data.message, "Transaction notes must be 2000 characters or fewer.");
+});
+
 test("transactions support date range filtering and amount sorting", async (t) => {
   const user = {
     id: "user-range",
@@ -1643,6 +1901,97 @@ test("settings password changes lock out after consecutive current password fail
   assert.ok(snapshot.users[0].passwordLockedUntil);
 });
 
+test("clear data requires the current password", async (t) => {
+  const user = {
+    id: "user-clear-password",
+    name: "Clear Password User",
+    email: "clear-password@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/settings/data", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(data.message, "Current password is required to clear finance data.");
+});
+
+test("clear data verifies the current password before deleting finance records", async (t) => {
+  const user = {
+    id: "user-clear-confirmed",
+    name: "Clear Confirmed User",
+    email: "clear-confirmed@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { store, server, request } = await startTestApp({
+    users: [user],
+    transactions: [
+      {
+        id: "txn-clear",
+        userId: user.id,
+        title: "Delete me",
+        amount: 100,
+        type: "expense",
+        category: "Food",
+        notes: "",
+        transactionDate: "2026-04-02",
+        createdAt: "2026-04-02T00:00:00.000Z",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      },
+    ],
+    budgets: [
+      {
+        id: "budget-clear",
+        userId: user.id,
+        month: "2026-04",
+        amount: 900,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const wrongPassword = await request("/api/settings/data", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ currentPassword: "wrong-password" }),
+  });
+
+  assert.equal(wrongPassword.response.status, 401);
+  assert.equal(wrongPassword.data.message, "Current password is incorrect.");
+
+  const confirmed = await request("/api/settings/data", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ currentPassword: "secret123" }),
+  });
+  const snapshot = await store.getSnapshot();
+
+  assert.equal(confirmed.response.status, 200);
+  assert.equal(confirmed.data.success, true);
+  assert.equal(snapshot.transactions.length, 0);
+  assert.equal(snapshot.budgets.length, 0);
+});
+
 test("recurring templates are returned in reports and can be exported", async (t) => {
   const user = {
     id: "user-1",
@@ -1695,6 +2044,108 @@ test("recurring templates are returned in reports and can be exported", async (t
   assert.equal(exportResponse.data.recurringTemplates.length, 1);
 });
 
+test("recurring templates stop generating after their end date", async (t) => {
+  const user = {
+    id: "user-recurring-end",
+    name: "Recurring End User",
+    email: "recurring-end@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    recurringTemplates: [
+      {
+        id: "rec-ended",
+        userId: user.id,
+        title: "Finished subscription",
+        amount: 499,
+        type: "expense",
+        category: "Bills",
+        notes: "",
+        startDate: "2026-01-15",
+        endDate: "2026-03-31",
+        repeat: "monthly",
+        createdAt: "2026-01-15T00:00:00.000Z",
+        updatedAt: "2026-01-15T00:00:00.000Z",
+      },
+    ],
+  });
+  t.after(() => closeServer(server));
+
+  const marchResponse = await request("/api/transactions?month=2026-03", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const aprilResponse = await request("/api/transactions?month=2026-04", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(marchResponse.response.status, 200);
+  assert.equal(marchResponse.data.transactions.length, 1);
+  assert.equal(marchResponse.data.transactions[0].title, "Finished subscription");
+  assert.equal(aprilResponse.response.status, 200);
+  assert.equal(aprilResponse.data.transactions.length, 0);
+});
+
+test("recurring templates accept and validate optional end dates", async (t) => {
+  const user = {
+    id: "user-recurring-end-create",
+    name: "Recurring End Create User",
+    email: "recurring-end-create@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  const createResponse = await request("/api/recurring-templates", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      title: "Term subscription",
+      amount: 100,
+      type: "expense",
+      category: "Bills",
+      notes: "",
+      startDate: "2026-04-01",
+      endDate: "2026-06-30",
+    }),
+  });
+  const invalidResponse = await request("/api/recurring-templates", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      title: "Invalid subscription",
+      amount: 100,
+      type: "expense",
+      category: "Bills",
+      notes: "",
+      startDate: "2026-06-30",
+      endDate: "2026-04-01",
+    }),
+  });
+
+  assert.equal(createResponse.response.status, 201);
+  assert.equal(createResponse.data.template.endDate, "2026-06-30");
+  assert.equal(invalidResponse.response.status, 400);
+  assert.equal(
+    invalidResponse.data.message,
+    "Recurring end date must be on or after the start date.",
+  );
+});
+
 test("recurring templates can be deleted without crashing the API", async (t) => {
   const user = {
     id: "user-1",
@@ -1745,4 +2196,36 @@ test("recurring templates can be deleted without crashing the API", async (t) =>
   assert.equal(deleteResponse.data.success, true);
   assert.equal(listResponse.response.status, 200);
   assert.equal(listResponse.data.templates.length, 0);
+});
+
+test("recurring templates reject titles that exceed API limits", async (t) => {
+  const user = {
+    id: "user-recurring-length",
+    name: "Recurring Length User",
+    email: "recurring-length@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/recurring-templates", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      title: "x".repeat(121),
+      amount: 100,
+      type: "expense",
+      category: "Bills",
+      notes: "",
+      startDate: "2026-04-12",
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(data.message, "Recurring title must be 120 characters or fewer.");
 });

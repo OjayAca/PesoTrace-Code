@@ -915,6 +915,13 @@ textarea { resize: vertical; }
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.02), var(--danger-soft));
 }
 
+.confirm-modal-field {
+  display: grid;
+  gap: 0.45rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
 .confirm-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1891,6 +1898,57 @@ textarea { resize: vertical; }
 
 .recurring-list {
   margin-top: 1rem;
+}
+
+.budget-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--warning-soft);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.budget-alert-danger {
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.budget-alert strong {
+  display: block;
+  color: currentColor;
+}
+
+.budget-alert p {
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.dashboard-search-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.dashboard-search-field span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-search-caption {
+  max-width: none;
+  margin-top: 0.75rem;
+  text-align: left;
+}
+
+.dashboard-search-results {
+  margin-top: 0.85rem;
 }
 
 .empty-inline {

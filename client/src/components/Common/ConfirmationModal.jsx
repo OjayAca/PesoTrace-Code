@@ -1,20 +1,32 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
 
 export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
   const confirmButtonRef = useRef(null);
+  const passwordInputRef = useRef(null);
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     if (dialog && !submitting) {
+      if (dialog.requirePassword) {
+        passwordInputRef.current?.focus();
+        return;
+      }
+
       confirmButtonRef.current?.focus();
     }
   }, [dialog, submitting]);
+
+  useEffect(() => {
+    setPassword("");
+  }, [dialog]);
 
   if (!dialog) {
     return null;
   }
 
   const Icon = dialog.icon || AlertCircle;
+  const confirmDisabled = submitting || (dialog.requirePassword && !password);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={submitting ? undefined : onCancel}>
@@ -48,6 +60,21 @@ export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
           {dialog.note ? <p className="confirm-modal-note">{dialog.note}</p> : null}
         </div>
 
+        {dialog.requirePassword ? (
+          <label className="confirm-modal-field">
+            <span>{dialog.passwordLabel || "Current password"}</span>
+            <input
+              ref={passwordInputRef}
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={dialog.passwordPlaceholder || "Enter your password"}
+              autoComplete="current-password"
+              disabled={submitting}
+            />
+          </label>
+        ) : null}
+
         <div className="confirm-modal-actions">
           <button
             className="secondary-button"
@@ -61,8 +88,8 @@ export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
             ref={confirmButtonRef}
             className={dialog.tone === "danger" ? "danger-button" : "primary-button"}
             type="button"
-            onClick={onConfirm}
-            disabled={submitting}
+            onClick={() => onConfirm({ password })}
+            disabled={confirmDisabled}
           >
             {submitting ? dialog.pendingLabel || "Processing..." : dialog.confirmLabel || "Confirm"}
           </button>

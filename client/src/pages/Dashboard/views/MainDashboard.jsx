@@ -1,6 +1,5 @@
-import { CalendarDays, Hash, Clock, Wallet, TrendingDown, TrendingUp, PieChart, FileText, Inbox, Target, CheckCircle2, Plus, BarChart3, ShieldCheck, Activity, AlertCircle } from "lucide-react";
+import { CalendarDays, Hash, Clock, FileText, Inbox, Target, CheckCircle2, Plus, BarChart3, AlertCircle, Search, Pencil, Copy } from "lucide-react";
 import { getFirstName, formatCurrency, formatDate } from "../../../utils/formatters";
-import { getStatusMeta } from "../../../utils/helpers";
 
 export function MainDashboard({
   user,
@@ -15,6 +14,13 @@ export function MainDashboard({
   budgetPaceCopy,
   metricCards,
   latestTransactions,
+  dashboardSearch,
+  setDashboardSearch,
+  dashboardSearchResults,
+  loadingDashboardSearch,
+  handleEditTransaction,
+  handleDuplicateTransaction,
+  budgetAlert,
   setActiveView,
   averageExpense,
   onboardingComplete,
@@ -69,6 +75,16 @@ export function MainDashboard({
           <p className="progress-caption">{budgetPaceCopy}</p>
         </article>
       </section>
+
+      {budgetAlert ? (
+        <section className={`budget-alert budget-alert-${budgetAlert.tone}`} role="status">
+          <AlertCircle size={18} />
+          <div>
+            <strong>{budgetAlert.title}</strong>
+            <p>{budgetAlert.message}</p>
+          </div>
+        </section>
+      ) : null}
 
       <section className="metric-grid">
         {metricCards.map((card) => (
@@ -131,6 +147,82 @@ export function MainDashboard({
                     {transaction.type === "income" ? "+" : "-"}
                     {formatCurrency(transaction.amount)}
                   </strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">
+                <Search size={12} /> Find entries
+              </p>
+              <h2>Transaction search</h2>
+            </div>
+          </div>
+
+          <label className="dashboard-search-field">
+            <span>Search all saved transactions</span>
+            <div className="input-with-icon">
+              <Search size={15} />
+              <input
+                type="search"
+                value={dashboardSearch}
+                onChange={(event) => setDashboardSearch(event.target.value)}
+                placeholder="Title, note, category"
+              />
+            </div>
+          </label>
+
+          {dashboardSearch.trim().length < 2 ? (
+            <p className="section-caption dashboard-search-caption">
+              Enter at least 2 characters to search your transaction history.
+            </p>
+          ) : loadingDashboardSearch ? (
+            <div className="empty-inline">Searching transactions...</div>
+          ) : dashboardSearchResults.length === 0 ? (
+            <div className="empty-inline">No matching transactions found.</div>
+          ) : (
+            <div className="list-stack dashboard-search-results">
+              {dashboardSearchResults.map((transaction) => (
+                <div className="list-row list-row-compact" key={transaction.id}>
+                  <div>
+                    <strong>{transaction.title}</strong>
+                    <p>
+                      {formatDate(transaction.transactionDate)} - {transaction.category} -{" "}
+                      {transaction.type}
+                    </p>
+                  </div>
+                  <div className="row-actions">
+                    <strong
+                      className={
+                        transaction.type === "income" ? "amount-positive" : "amount-negative"
+                      }
+                    >
+                      {transaction.type === "income" ? "+" : "-"}
+                      {formatCurrency(transaction.amount)}
+                    </strong>
+                    <button
+                      className="icon-btn"
+                      type="button"
+                      onClick={() => handleDuplicateTransaction(transaction)}
+                      title="Duplicate"
+                      aria-label={`Duplicate ${transaction.title}`}
+                    >
+                      <Copy size={14} />
+                    </button>
+                    <button
+                      className="icon-btn"
+                      type="button"
+                      onClick={() => handleEditTransaction(transaction)}
+                      title="Edit"
+                      aria-label={`Edit ${transaction.title}`}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

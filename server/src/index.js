@@ -9,7 +9,7 @@ import { createApp } from "./app.js";
 
 dotenv.config();
 
-const PORT = process.env.PORT || 5000;
+const DEFAULT_PORT = Number(process.env.PORT || 5000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +35,29 @@ function listen(app, port) {
       resolve(server);
     });
   });
+}
+
+export async function listenWithAvailablePort(app, startPort) {
+  const requestedPort = Number(startPort);
+  let port = requestedPort;
+
+  while (true) {
+    try {
+      const server = await listen(app, port);
+
+      if (port !== requestedPort) {
+        console.log(`Port ${requestedPort} is unavailable. Started the API on ${port} instead.`);
+      }
+
+      return server;
+    } catch (error) {
+      if (error.code !== "EADDRINUSE" && error.code !== "EACCES") {
+        throw error;
+      }
+
+      port += 1;
+    }
+  }
 }
 
 export async function createRuntimeStore(env = process.env) {
@@ -69,14 +92,14 @@ export async function startServer() {
     clientOrigin: CLIENT_ORIGIN,
   });
 
-  return listen(app, PORT);
+  return listenWithAvailablePort(app, DEFAULT_PORT);
 }
 
 if (process.env.NODE_ENV !== "test") {
   startServer().catch((error) => {
     if (error.code === "EADDRINUSE") {
       console.error(
-        `Port ${PORT} is already in use. Set PORT to another value or run "npm run dev" from the project root to auto-select a free API port.`,
+        `The selected API port is already in use. Set PORT to another value or run "npm run dev" from the project root.`,
       );
       process.exit(1);
     }

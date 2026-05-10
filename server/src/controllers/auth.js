@@ -1,6 +1,12 @@
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
-import { clearAuthCookie, createToken, setAuthCookie } from "../auth.js";
+import {
+  clearAuthCookie,
+  createToken,
+  revokeAuthToken,
+  setAuthCookie,
+  setCsrfCookie,
+} from "../auth.js";
 import { ClientError } from "../utils/errors.js";
 import { getBcryptRounds } from "../utils/bcryptConfig.js";
 import { isValidEmail, sanitizeUser, isDuplicateEntryError } from "../utils/helpers.js";
@@ -95,8 +101,10 @@ export function register(store) {
 
     const publicUser = sanitizeUser(user);
     setAuthCookie(req, res, createToken(publicUser));
+    const csrfToken = setCsrfCookie(req, res);
     return res.status(201).json({
       user: publicUser,
+      csrfToken,
     });
   };
 }
@@ -136,8 +144,10 @@ export function login(store) {
     await store.resetUserLoginFailures(user.id);
     const publicUser = sanitizeUser(user);
     setAuthCookie(req, res, createToken(publicUser));
+    const csrfToken = setCsrfCookie(req, res);
     return res.json({
       user: publicUser,
+      csrfToken,
     });
   };
 }
@@ -201,18 +211,23 @@ export function getPasswordFailureLockout() {
 
 export function me(store) {
   return async (req, res) => {
+    if (!req.auth) {
+      return res.json({ user: null, csrfToken: "" });
+    }
+
     const user = await store.getUserById(req.auth.userId);
 
     if (!user) {
       throw new ClientError("User account no longer exists.", 404);
     }
 
-    return res.json({ user: sanitizeUser(user) });
+    return res.json({ user: sanitizeUser(user), csrfToken: req.csrfToken || "" });
   };
 }
 
 export function logout() {
   return (req, res) => {
+    revokeAuthToken(req.auth);
     clearAuthCookie(req, res);
     return res.json({ success: true });
   };

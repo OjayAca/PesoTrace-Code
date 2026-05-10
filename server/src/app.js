@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { requireAuth, requireTrustedOrigin, requireTrustedRequestOrigin } from "./auth.js";
+import { optionalAuth, requireAuth, requireTrustedOrigin, requireTrustedRequestOrigin } from "./auth.js";
 import { DEFAULT_CATEGORIES } from "./finance.js";
 import { isAllowedOrigin } from "./utils/helpers.js";
 import { safeErrorResponse } from "./utils/errors.js";
@@ -22,6 +22,28 @@ function createLimiter(options = {}) {
       message: options.message ?? "Too many requests. Please try again later.",
     },
   });
+}
+
+function getForwardedHeaderValue(value) {
+  return String(value || "")
+    .split(",")[0]
+    .trim();
+}
+
+function requireHttpsInProduction(env = process.env) {
+  return (req, res, next) => {
+    if (env.NODE_ENV !== "production" || req.secure) {
+      return next();
+    }
+
+    const host = getForwardedHeaderValue(req.headers["x-forwarded-host"]) || req.get("host");
+
+    if (!host) {
+      return res.status(400).json({ message: "HTTPS is required in production." });
+    }
+
+    return res.redirect(308, `https://${host}${req.originalUrl || req.url}`);
+  };
 }
 
 export function createApp({
@@ -98,6 +120,7 @@ export function createApp({
     app.set("trust proxy", 1);
   }
 
+  app.use(requireHttpsInProduction(env));
   app.use(helmet());
   app.use(
     cors({
@@ -126,7 +149,7 @@ export function createApp({
   app.post("/api/auth/password-reset/request", requireTrustedAuthOrigin, passwordResetRateLimit, asyncHandler(authController.requestPasswordReset(store, emailService)));
   app.post("/api/auth/password-reset/confirm", requireTrustedAuthOrigin, passwordResetRateLimit, asyncHandler(authController.confirmPasswordReset(store)));
   app.post("/api/auth/logout", requireAuth, requireTrustedSessionOrigin, asyncHandler(authController.logout()));
-  app.get("/api/auth/me", requireAuth, asyncHandler(authController.me(store)));
+  app.get("/api/auth/me", optionalAuth, asyncHandler(authController.me(store)));
 
   // Finance
   app.get("/api/dashboard", requireAuth, asyncHandler(financeController.getDashboard(store)));

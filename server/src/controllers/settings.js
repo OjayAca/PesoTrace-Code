@@ -152,7 +152,34 @@ export function exportData(store) {
 
 export function clearData(store) {
   return async (req, res) => {
+    const user = await store.getUserById(req.auth.userId);
+
+    if (!user) {
+      throw new ClientError("User account no longer exists.", 404);
+    }
+
+    const currentPassword = String(req.body.currentPassword || "");
+
+    if (!currentPassword) {
+      throw new ClientError("Current password is required to clear finance data.");
+    }
+
+    checkPasswordChangeAllowed(user);
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+
+    if (!isMatch) {
+      const updatedUser = await store.incrementUserPasswordFailure(
+        req.auth.userId,
+        getPasswordFailureLockout(),
+      );
+
+      checkPasswordChangeAllowed(updatedUser || user);
+      throw new ClientError("Current password is incorrect.", 401);
+    }
+
     await store.clearUserData(req.auth.userId);
+    await store.resetUserPasswordFailures(req.auth.userId);
     return res.json({ success: true });
   };
 }

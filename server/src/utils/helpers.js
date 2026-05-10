@@ -1,5 +1,8 @@
 import { toAmount, normalizeDate, normalizeTransactionType, normalizeCategory } from "../finance.js";
 
+const TITLE_MAX_LENGTH = 120;
+const NOTES_MAX_LENGTH = 2000;
+
 export function getUserPreferences(user = {}) {
   return {
     preferredTheme: user?.preferences?.preferredTheme || "light",
@@ -38,8 +41,15 @@ export function buildUserPreferences(user, payload = {}) {
 
   return {
     preferredTheme: nextTheme,
+    // defaultBudget is intentionally ignored: budgets are month-scoped records, not account preferences.
     currency: "PHP",
   };
+}
+
+function assertTextLength(value, fieldName, maxLength) {
+  if (value.length > maxLength) {
+    throw new Error(`${fieldName} must be ${maxLength} characters or fewer.`);
+  }
 }
 
 export function getTransactionPayload(body) {
@@ -53,6 +63,9 @@ export function getTransactionPayload(body) {
   if (!title) {
     throw new Error("Transaction title is required.");
   }
+
+  assertTextLength(title, "Transaction title", TITLE_MAX_LENGTH);
+  assertTextLength(notes, "Transaction notes", NOTES_MAX_LENGTH);
 
   return {
     title,
@@ -69,6 +82,7 @@ export function getRecurringTemplatePayload(body) {
   const notes = String(body.notes || "").trim();
   const amount = toAmount(body.amount, "Amount");
   const startDate = normalizeDate(body.startDate);
+  const endDate = body.endDate ? normalizeDate(body.endDate) : null;
   const type = normalizeTransactionType(body.type || "expense");
   const category = normalizeCategory(body.category);
 
@@ -76,11 +90,19 @@ export function getRecurringTemplatePayload(body) {
     throw new Error("Recurring title is required.");
   }
 
+  if (endDate && endDate < startDate) {
+    throw new Error("Recurring end date must be on or after the start date.");
+  }
+
+  assertTextLength(title, "Recurring title", TITLE_MAX_LENGTH);
+  assertTextLength(notes, "Recurring notes", NOTES_MAX_LENGTH);
+
   return {
     title,
     notes,
     amount,
     startDate,
+    endDate,
     type,
     category,
     repeat: "monthly",

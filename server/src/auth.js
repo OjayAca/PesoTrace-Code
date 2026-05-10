@@ -1,8 +1,13 @@
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { getRequestOrigin, isAllowedOrigin } from "./utils/helpers.js";
 
 export const AUTH_COOKIE_NAME = "pesotrace-session";
+export const CSRF_COOKIE_NAME = "pesotrace-csrf";
+export const CSRF_HEADER_NAME = "x-csrf-token";
 const AUTH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const AUTH_RENEWAL_THRESHOLD_SECONDS = 24 * 60 * 60;
+const revokedTokenIds = new Map();
 
 export function ensureJwtSecret(env = process.env) {
   const secret = String(env.JWT_SECRET || "").trim();
@@ -20,6 +25,14 @@ export function ensureJwtSecret(env = process.env) {
 
 function getJwtSecret() {
   return ensureJwtSecret(process.env);
+}
+
+function createCsrfToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function createTokenId() {
+  return crypto.randomUUID();
 }
 
 function getRequestProtocol(req) {
@@ -116,21 +129,64 @@ function getTokenFromCookie(req) {
   return cookies[AUTH_COOKIE_NAME] || "";
 }
 
+function getCsrfTokenFromCookie(req) {
+  const cookies = parseCookies(req.headers.cookie || "");
+  return cookies[CSRF_COOKIE_NAME] || "";
+}
+
 function getTokenFromAuthorizationHeader(req) {
   const authHeader = req.headers.authorization || "";
   const [, token = ""] = authHeader.split(" ");
   return token;
 }
 
-export function createToken(user) {
+function cleanupRevokedTokenIds(now = Date.now()) {
+  for (const [tokenId, expiresAt] of revokedTokenIds) {
+    if (expiresAt <= now) {
+      revokedTokenIds.delete(tokenId);
+    }
+  }
+}
+
+function isTokenRevoked(payload) {
+  cleanupRevokedTokenIds();
+  return Boolean(payload?.jti && revokedTokenIds.has(payload.jti));
+}
+
+function hasValidCsrfToken(req) {
+  const headerToken = String(req.headers[CSRF_HEADER_NAME] || "").trim();
+  const cookieToken = getCsrfTokenFromCookie(req);
+
+  const headerBuffer = Buffer.from(headerToken);
+  const cookieBuffer = Buffer.from(cookieToken);
+
+  if (!headerToken || !cookieToken || headerBuffer.length !== cookieBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(headerBuffer, cookieBuffer);
+}
+
+function shouldRenewAuthCookie(payload) {
+  const expiresAt = Number(payload?.exp || 0);
+
+  if (!expiresAt) {
+    return false;
+  }
+
+  return expiresAt - Math.floor(Date.now() / 1000) <= AUTH_RENEWAL_THRESHOLD_SECONDS;
+}
+
+export function createToken(user, options = {}) {
   return jwt.sign(
     {
-      userId: user.id,
+      userId: user.id || user.userId,
       email: user.email,
+      jti: createTokenId(),
     },
     getJwtSecret(),
     {
-      expiresIn: "7d",
+      expiresIn: options.expiresIn || "7d",
     },
   );
 }
@@ -151,28 +207,102 @@ export function setAuthCookie(req, res, token) {
   res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions(req));
 }
 
+export function setCsrfCookie(req, res, token = createCsrfToken()) {
+  res.cookie(CSRF_COOKIE_NAME, token, getAuthCookieOptions(req));
+  return token;
+}
+
 export function clearAuthCookie(req, res) {
   const { maxAge, ...options } = getAuthCookieOptions(req);
   res.clearCookie(AUTH_COOKIE_NAME, options);
+  res.clearCookie(CSRF_COOKIE_NAME, options);
 }
 
-export function requireAuth(req, res, next) {
+export function revokeAuthToken(payload = {}) {
+  const tokenId = String(payload.jti || "").trim();
+  const expiresAt = Number(payload.exp || 0) * 1000;
+
+  if (!tokenId || !expiresAt) {
+    return;
+  }
+
+  cleanupRevokedTokenIds();
+  revokedTokenIds.set(tokenId, expiresAt);
+}
+
+function authenticateRequest(req, res, next, options = {}) {
+  const required = options.required !== false;
   const headerToken = getTokenFromAuthorizationHeader(req);
   const cookieToken = getTokenFromCookie(req);
   const token = headerToken || cookieToken;
 
   if (!token) {
+    if (!required) {
+      req.auth = null;
+      req.authSource = "";
+      req.authToken = "";
+      req.csrfToken = "";
+      return next();
+    }
+
     return res.status(401).json({ message: "Authentication is required." });
   }
 
   try {
     const payload = jwt.verify(token, getJwtSecret());
+
+    if (!payload.jti || isTokenRevoked(payload)) {
+      if (!required) {
+        if (cookieToken) {
+          clearAuthCookie(req, res);
+        }
+
+        req.auth = null;
+        req.authSource = "";
+        req.authToken = "";
+        req.csrfToken = "";
+        return next();
+      }
+
+      return res.status(401).json({ message: "Your session is invalid or expired." });
+    }
+
     req.auth = payload;
     req.authSource = headerToken ? "bearer" : "cookie";
+    req.authToken = token;
+
+    if (req.authSource === "cookie") {
+      req.csrfToken = getCsrfTokenFromCookie(req) || setCsrfCookie(req, res);
+
+      if (shouldRenewAuthCookie(payload)) {
+        setAuthCookie(req, res, createToken(payload));
+      }
+    }
+
     return next();
   } catch {
+    if (!required) {
+      if (cookieToken) {
+        clearAuthCookie(req, res);
+      }
+
+      req.auth = null;
+      req.authSource = "";
+      req.authToken = "";
+      req.csrfToken = "";
+      return next();
+    }
+
     return res.status(401).json({ message: "Your session is invalid or expired." });
   }
+}
+
+export function optionalAuth(req, res, next) {
+  return authenticateRequest(req, res, next, { required: false });
+}
+
+export function requireAuth(req, res, next) {
+  return authenticateRequest(req, res, next);
 }
 
 export function requireTrustedRequestOrigin(clientOrigin = "http://localhost:5173") {
@@ -210,7 +340,13 @@ export function requireTrustedOrigin(clientOrigin = "http://localhost:5173") {
     const requestOrigin = getRequestOrigin(req.headers);
 
     if (requestOrigin && isAllowedOrigin(requestOrigin, clientOrigin)) {
-      return next();
+      if (hasValidCsrfToken(req)) {
+        return next();
+      }
+
+      return res.status(403).json({
+        message: "A valid CSRF token is required for session-authenticated changes.",
+      });
     }
 
     return res.status(403).json({

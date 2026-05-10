@@ -314,6 +314,7 @@ function normalizeRecurringTemplate(template) {
     notes: String(template?.notes || ""),
     amount: Number(template?.amount || 0),
     startDate: String(template?.startDate || "").slice(0, 10),
+    endDate: template?.endDate ? String(template.endDate).slice(0, 10) : null,
     type: template?.type === "income" ? "income" : "expense",
     category: String(template?.category || "Other").trim() || "Other",
     repeat: "monthly",
@@ -866,7 +867,7 @@ export function createMySqlStore(env = process.env) {
       ),
       pool.query(
         `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                type, category, created_at AS createdAt,
+                end_date AS endDate, type, category, created_at AS createdAt,
                 updated_at AS updatedAt
          FROM recurring_templates
          ORDER BY start_date ASC, id ASC`,
@@ -909,7 +910,7 @@ export function createMySqlStore(env = process.env) {
       ),
       pool.query(
         `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                type, category, created_at AS createdAt,
+                end_date AS endDate, type, category, created_at AS createdAt,
                 updated_at AS updatedAt
          FROM recurring_templates
          WHERE user_id = ?
@@ -969,6 +970,7 @@ export function createMySqlStore(env = process.env) {
       values.push(`%${normalizedFilters.query.toLowerCase()}%`);
     }
 
+    // Security-sensitive: ORDER BY identifiers cannot be parameterized, so only use this allowlist.
     const sortColumns = {
       amount: "amount",
       title: "title",
@@ -989,12 +991,20 @@ export function createMySqlStore(env = process.env) {
       normalizedFilters.includeRecurring && normalizedFilters.month
         ? pool.query(
             `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                    type, category, created_at AS createdAt, updated_at AS updatedAt
+                    end_date AS endDate, type, category, created_at AS createdAt, updated_at AS updatedAt
              FROM recurring_templates
              WHERE user_id = ?
                AND start_date <= LAST_DAY(CONCAT(?, '-01'))
+               AND (
+                 end_date IS NULL OR
+                 CONCAT(
+                   ?,
+                   '-',
+                   LPAD(LEAST(DAY(start_date), DAY(LAST_DAY(CONCAT(?, '-01')))), 2, '0')
+                 ) <= end_date
+               )
              ORDER BY start_date ASC, id ASC`,
-            [userId, normalizedFilters.month],
+            [userId, normalizedFilters.month, normalizedFilters.month, normalizedFilters.month],
           )
         : Promise.resolve([[]]),
     ]);
@@ -1011,7 +1021,7 @@ export function createMySqlStore(env = process.env) {
     const pool = await getPool();
     const [rows] = await pool.query(
       `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-              type, category, created_at AS createdAt, updated_at AS updatedAt
+              end_date AS endDate, type, category, created_at AS createdAt, updated_at AS updatedAt
        FROM recurring_templates
        WHERE user_id = ?
        ORDER BY start_date ASC, id ASC`,
@@ -1070,8 +1080,16 @@ export function createMySqlStore(env = process.env) {
          FROM recurring_templates
          WHERE user_id = ?
            AND start_date <= LAST_DAY(CONCAT(?, '-01'))
+           AND (
+             end_date IS NULL OR
+             CONCAT(
+               ?,
+               '-',
+               LPAD(LEAST(DAY(start_date), DAY(LAST_DAY(CONCAT(?, '-01')))), 2, '0')
+             ) <= end_date
+           )
        ) activity`,
-      [userId, startDate, endDate, userId, month],
+      [userId, startDate, endDate, userId, month, month, month],
     );
 
     return {
@@ -1110,10 +1128,18 @@ export function createMySqlStore(env = process.env) {
          FROM recurring_templates
          WHERE user_id = ?
            AND start_date <= LAST_DAY(CONCAT(?, '-01'))
+           AND (
+             end_date IS NULL OR
+             CONCAT(
+               ?,
+               '-',
+               LPAD(LEAST(DAY(start_date), DAY(LAST_DAY(CONCAT(?, '-01')))), 2, '0')
+             ) <= end_date
+           )
        ) activity
        GROUP BY activity.type, activity.category
        ORDER BY amount DESC, activity.type ASC, activity.category ASC`,
-      [userId, startDate, endDate, userId, month],
+      [userId, startDate, endDate, userId, month, month, month],
     );
 
     return rows.map((row) => ({
@@ -1178,14 +1204,22 @@ export function createMySqlStore(env = process.env) {
            rt.created_at AS createdAt,
            rt.updated_at AS updatedAt,
            1 AS isRecurring
-         FROM recurring_templates rt
-         WHERE rt.user_id = ?
-           AND rt.start_date <= LAST_DAY(CONCAT(?, '-01'))
+        FROM recurring_templates rt
+        WHERE rt.user_id = ?
+          AND rt.start_date <= LAST_DAY(CONCAT(?, '-01'))
+          AND (
+            rt.end_date IS NULL OR
+            CONCAT(
+              ?,
+              '-',
+              LPAD(LEAST(DAY(rt.start_date), DAY(LAST_DAY(CONCAT(?, '-01')))), 2, '0')
+            ) <= rt.end_date
+          )
        ) activity
        WHERE activity.type = ?
        ORDER BY activity.amount DESC, activity.transactionDate DESC, activity.updatedAt DESC, activity.id DESC
        LIMIT 1`,
-      [userId, startDate, endDate, month, month, month, userId, month, type],
+      [userId, startDate, endDate, month, month, month, userId, month, month, month, type],
       normalizeReportEntryFromRow,
     );
   }
@@ -1788,8 +1822,8 @@ export function createMySqlStore(env = process.env) {
 
       await db.execute(
         `INSERT INTO recurring_templates (
-           id, user_id, title, notes, amount, start_date, type, category, repeat_cycle, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           id, user_id, title, notes, amount, start_date, end_date, type, category, repeat_cycle, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           normalizedTemplate.id,
           normalizedTemplate.userId,
@@ -1797,6 +1831,7 @@ export function createMySqlStore(env = process.env) {
           normalizedTemplate.notes,
           normalizedTemplate.amount,
           normalizedTemplate.startDate,
+          normalizedTemplate.endDate,
           normalizedTemplate.type,
           normalizedTemplate.category,
           normalizedTemplate.repeat,
@@ -1808,7 +1843,7 @@ export function createMySqlStore(env = process.env) {
       return getOneWithExecutor(
         db,
         `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                type, category, created_at AS createdAt,
+                end_date AS endDate, type, category, created_at AS createdAt,
                 updated_at AS updatedAt
          FROM recurring_templates
          WHERE user_id = ? AND id = ?
@@ -1820,7 +1855,7 @@ export function createMySqlStore(env = process.env) {
     async findRecurringTemplate(userId, id) {
       return getOne(
         `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
-                type, category, created_at AS createdAt,
+                end_date AS endDate, type, category, created_at AS createdAt,
                 updated_at AS updatedAt
          FROM recurring_templates
          WHERE user_id = ? AND id = ?
@@ -1839,13 +1874,14 @@ export function createMySqlStore(env = process.env) {
 
       const [result] = await pool.execute(
         `UPDATE recurring_templates
-         SET title = ?, notes = ?, amount = ?, start_date = ?, type = ?, category = ?, repeat_cycle = ?, updated_at = ?
+         SET title = ?, notes = ?, amount = ?, start_date = ?, end_date = ?, type = ?, category = ?, repeat_cycle = ?, updated_at = ?
          WHERE user_id = ? AND id = ?`,
         [
           normalizedTemplate.title,
           normalizedTemplate.notes,
           normalizedTemplate.amount,
           normalizedTemplate.startDate,
+          normalizedTemplate.endDate,
           normalizedTemplate.type,
           normalizedTemplate.category,
           normalizedTemplate.repeat,

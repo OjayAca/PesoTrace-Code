@@ -1,6 +1,17 @@
 const API_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000/api";
 export const AUTH_EXPIRED_EVENT = "pesotrace:auth-expired";
 const API_REQUEST_TIMEOUT_MS = 12000;
+let csrfToken = "";
+
+function isUnsafeMethod(method = "GET") {
+  return !["GET", "HEAD", "OPTIONS"].includes(String(method).toUpperCase());
+}
+
+function rememberCsrfToken(data) {
+  if (typeof data?.csrfToken === "string") {
+    csrfToken = data.csrfToken;
+  }
+}
 
 async function request(path, options = {}) {
   const { headers: customHeaders = {}, timeoutMs, ...fetchOptions } = options;
@@ -8,6 +19,11 @@ async function request(path, options = {}) {
     "Content-Type": "application/json",
     ...customHeaders,
   };
+
+  if (csrfToken && isUnsafeMethod(fetchOptions.method)) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
+
   const controller = new AbortController();
   const requestTimeoutMs = Number(timeoutMs || API_REQUEST_TIMEOUT_MS);
   const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
@@ -37,6 +53,7 @@ async function request(path, options = {}) {
 
   const data =
     response.status === 204 ? {} : await response.json().catch(() => ({}));
+  rememberCsrfToken(data);
 
   if (
     response.status === 401 &&
@@ -45,7 +62,12 @@ async function request(path, options = {}) {
     !path.startsWith("/auth/me") &&
     !path.startsWith("/auth/logout")
   ) {
+    csrfToken = "";
     window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  }
+
+  if (response.ok && path.startsWith("/auth/logout")) {
+    csrfToken = "";
   }
 
   if (!response.ok) {
@@ -176,9 +198,10 @@ export const api = {
   exportData() {
     return request("/settings/export");
   },
-  clearData() {
+  clearData(payload) {
     return request("/settings/data", {
       method: "DELETE",
+      body: JSON.stringify(payload),
     });
   },
   getRecurringTemplates() {

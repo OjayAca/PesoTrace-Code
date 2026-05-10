@@ -28,6 +28,9 @@ export function Dashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [reports, setReports] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [dashboardSearch, setDashboardSearch] = useState("");
+  const [dashboardSearchResults, setDashboardSearchResults] = useState([]);
+  const [loadingDashboardSearch, setLoadingDashboardSearch] = useState(false);
   const [settingsData, setSettingsData] = useState(null);
   const [recurringTemplates, setRecurringTemplates] = useState([]);
   const [error, setError] = useState("");
@@ -71,6 +74,7 @@ export function Dashboard() {
     title: "",
     amount: "",
     startDate: `${getCurrentMonth()}-01`,
+    endDate: "",
     type: "expense",
     category: "Other",
     notes: "",
@@ -145,7 +149,7 @@ export function Dashboard() {
     setConfirmDialog(null);
   }
 
-  async function handleConfirmDialog() {
+  async function handleConfirmDialog(payload) {
     if (!confirmDialog?.onConfirm) {
       return;
     }
@@ -153,7 +157,7 @@ export function Dashboard() {
     setConfirmingAction(true);
 
     try {
-      await confirmDialog.onConfirm();
+      await confirmDialog.onConfirm(payload);
       setConfirmDialog(null);
     } finally {
       setConfirmingAction(false);
@@ -247,6 +251,47 @@ export function Dashboard() {
     filters.sortBy,
     filters.sortOrder,
   ]);
+
+  useEffect(() => {
+    const query = dashboardSearch.trim();
+
+    if (query.length < 2) {
+      setDashboardSearchResults([]);
+      setLoadingDashboardSearch(false);
+      return undefined;
+    }
+
+    let active = true;
+    setLoadingDashboardSearch(true);
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await api.getTransactions({
+          query,
+          sortBy: "date",
+          sortOrder: "desc",
+          includeRecurring: "false",
+        });
+
+        if (active) {
+          setDashboardSearchResults((response.transactions || []).slice(0, 8));
+        }
+      } catch (searchError) {
+        if (active) {
+          setError(searchError.message);
+        }
+      } finally {
+        if (active) {
+          setLoadingDashboardSearch(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [dashboardSearch]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -444,6 +489,26 @@ export function Dashboard() {
       : budgetPaceDelta >= 0
         ? `${formatCurrency(budgetPaceDelta)} under the expected pace for ${monthLabel}.`
         : `${formatCurrency(Math.abs(budgetPaceDelta))} over the expected pace for ${monthLabel}.`;
+  const budgetUsagePercent =
+    availableFunds && availableFunds > 0
+      ? Math.round((totalExpenses / availableFunds) * 100)
+      : null;
+  const budgetAlert =
+    budgetRemaining === null
+      ? null
+      : isOverBudget
+        ? {
+            tone: "danger",
+            title: "Budget exceeded",
+            message: `${monthLabel} is over budget by ${formatCurrency(Math.abs(budgetRemaining))}. Review expenses before adding new discretionary spending.`,
+          }
+        : budgetUsagePercent !== null && budgetUsagePercent >= 80
+          ? {
+              tone: "warning",
+              title: "Budget alert",
+              message: `${budgetUsagePercent}% of available funds are already used for ${monthLabel}. You have ${formatCurrency(budgetRemaining)} left.`,
+            }
+          : null;
   const recurringTotal = transactions.reduce((sum, transaction) => {
     if (!transaction.isRecurring) {
       return sum;
@@ -557,6 +622,7 @@ export function Dashboard() {
       title: "",
       amount: "",
       startDate: `${selectedMonth}-01`,
+      endDate: "",
       type: "expense",
       category: "Other",
       notes: "",
@@ -778,6 +844,7 @@ export function Dashboard() {
       title: recurringForm.title,
       amount: recurringForm.amount,
       startDate: recurringForm.startDate,
+      endDate: recurringForm.endDate || null,
       type: recurringForm.type,
       category: recurringForm.category,
       notes: recurringForm.notes,
@@ -807,6 +874,7 @@ export function Dashboard() {
       title: template.title,
       amount: String(template.amount),
       startDate: template.startDate,
+      endDate: template.endDate || "",
       type: template.type || "expense",
       category: template.category || "Other",
       notes: template.notes || "",
@@ -1001,9 +1069,11 @@ export function Dashboard() {
       pendingLabel: "Clearing...",
       tone: "danger",
       icon: null,
-      onConfirm: async () => {
+      requirePassword: true,
+      passwordLabel: "Confirm with your current password",
+      onConfirm: async ({ password }) => {
         try {
-          await api.clearData();
+          await api.clearData({ currentPassword: password });
           resetTransactionForm();
           resetRecurringForm();
           clearTransactionFilters();
@@ -1164,6 +1234,13 @@ export function Dashboard() {
                 budgetPaceCopy={budgetPaceCopy}
                 metricCards={metricCards}
                 latestTransactions={latestTransactions}
+                dashboardSearch={dashboardSearch}
+                setDashboardSearch={setDashboardSearch}
+                dashboardSearchResults={dashboardSearchResults}
+                loadingDashboardSearch={loadingDashboardSearch}
+                handleEditTransaction={handleEditTransaction}
+                handleDuplicateTransaction={handleDuplicateTransaction}
+                budgetAlert={budgetAlert}
                 setActiveView={(view) => navigate(`/dashboard/${view}`)}
                 averageExpense={averageExpense}
                 onboardingComplete={onboardingComplete}

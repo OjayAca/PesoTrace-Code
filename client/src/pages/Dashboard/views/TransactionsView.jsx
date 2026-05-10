@@ -666,6 +666,23 @@ export function TransactionsView({
                   required
                 />
               </label>
+              <label>
+                <div className="field-label">
+                  <span>End date</span>
+                  <small>Optional final month this applies.</small>
+                </div>
+                <input
+                  type="date"
+                  value={recurringForm.endDate}
+                  min={recurringForm.startDate}
+                  onChange={(event) =>
+                    setRecurringForm((current) => ({
+                      ...current,
+                      endDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
             </div>
 
             <label>
@@ -704,7 +721,10 @@ export function TransactionsView({
                   <div>
                     <strong>{template.title}</strong>
                     <p>
-                      Starts {formatDate(template.startDate)} - {template.type} -{" "}
+                      Starts {formatDate(template.startDate)}
+                      {template.endDate ? ` - Ends ${formatDate(template.endDate)}` : ""}
+                      {" - "}
+                      {template.type} -{" "}
                       {template.category}
                     </p>
                   </div>

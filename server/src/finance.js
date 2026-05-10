@@ -79,7 +79,15 @@ function buildRecurringTransactions(userId, month, storeData = EMPTY_STORE_DATA)
         return false;
       }
 
-      return compareMonths(getMonthKey(template.startDate), month) <= 0;
+      if (compareMonths(getMonthKey(template.startDate), month) > 0) {
+        return false;
+      }
+
+      if (!template.endDate) {
+        return true;
+      }
+
+      return resolveOccurrenceDate(template.startDate, month) <= template.endDate;
     })
     .map((template) => ({
       id: `recurring:${template.id}:${month}`,
@@ -91,6 +99,7 @@ function buildRecurringTransactions(userId, month, storeData = EMPTY_STORE_DATA)
       type: template.type === "income" ? "income" : "expense",
       category: getCategoryLabel(template.category),
       transactionDate: resolveOccurrenceDate(template.startDate, month),
+      endDate: template.endDate || null,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,
       isRecurring: true,
@@ -352,6 +361,7 @@ export function getRecurringTemplates(userId, storeData = EMPTY_STORE_DATA) {
     .filter((template) => template.userId === userId)
     .map((template) => ({
       ...template,
+      endDate: template.endDate || null,
       type: template.type === "income" ? "income" : "expense",
       category: getCategoryLabel(template.category),
       repeat: "monthly",

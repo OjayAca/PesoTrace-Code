@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS recurring_templates (
   notes TEXT NOT NULL,
   amount DECIMAL(12,2) NOT NULL,
   start_date DATE NOT NULL,
+  end_date DATE NULL,
   type ENUM('expense', 'income') NOT NULL DEFAULT 'expense',
   category VARCHAR(40) NOT NULL,
   repeat_cycle ENUM('monthly') NOT NULL DEFAULT 'monthly',
@@ -84,11 +85,15 @@ CREATE TABLE IF NOT EXISTS recurring_templates (
   updated_at DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
   KEY idx_recurring_templates_user_start (user_id, start_date),
+  KEY idx_recurring_templates_user_end (user_id, end_date),
   CONSTRAINT fk_recurring_templates_user
     FOREIGN KEY (user_id) REFERENCES users (id)
     ON DELETE CASCADE,
   CONSTRAINT chk_recurring_templates_title_nonempty CHECK (CHAR_LENGTH(TRIM(title)) > 0),
   CONSTRAINT chk_recurring_templates_amount_positive CHECK (amount > 0),
+  CONSTRAINT chk_recurring_templates_date_range CHECK (
+    end_date IS NULL OR end_date >= start_date
+  ),
   CONSTRAINT chk_recurring_templates_category_length CHECK (
     CHAR_LENGTH(TRIM(category)) BETWEEN 1 AND 40
   )

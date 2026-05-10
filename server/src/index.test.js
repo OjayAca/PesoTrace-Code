@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 
 test("runtime config requires JWT_SECRET", async () => {
@@ -100,5 +101,49 @@ test("explicit memory mode uses the bundled JSON snapshot", async () => {
     } else {
       process.env.NODE_ENV = previousNodeEnv;
     }
+  }
+});
+
+test("listenWithAvailablePort retries when the selected port fails to bind", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousConsoleLog = console.log;
+  process.env.NODE_ENV = "test";
+  console.log = () => {};
+
+  try {
+    const { listenWithAvailablePort } = await import("./index.js");
+    const attempts = [];
+    const app = {
+      listen(port) {
+        attempts.push(port);
+        const server = new EventEmitter();
+
+        process.nextTick(() => {
+          if (attempts.length === 1) {
+            const error = new Error("Port is busy");
+            error.code = "EADDRINUSE";
+            server.emit("error", error);
+            return;
+          }
+
+          server.emit("listening");
+        });
+
+        return server;
+      },
+    };
+
+    const server = await listenWithAvailablePort(app, 5100);
+
+    assert.ok(server);
+    assert.deepEqual(attempts, [5100, 5101]);
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    console.log = previousConsoleLog;
   }
 });

@@ -94,3 +94,12 @@ The API runs on `http://localhost:5000`.
 - MySQL is the default persistence layer; the JSON snapshot is available only through the explicit `MYSQL_STORE=memory` mode.
 - Browser sessions are stored in an `HttpOnly` cookie rather than `localStorage`.
 - The database schema is defined in [server/sql/schema.sql](./server/sql/schema.sql).
+
+## Deployment
+
+Use [Deployment.md](./Deployment.md) as the full deployment checklist.
+
+- Deploy `client/` to Vercel with `VITE_API_URL=https://<your-railway-api-domain>/api`.
+- Deploy `server/` to Railway with `npm start`, `MYSQL_STORE=true`, Railway MySQL variables, `JWT_SECRET`, and Resend email variables.
+- Run `server/sql/schema.sql` against the Railway MySQL service before production use.
+- After Vercel gives the final production URL, set Railway `CLIENT_ORIGIN` and `APP_BASE_URL` to that exact origin.

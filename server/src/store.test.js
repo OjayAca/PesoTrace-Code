@@ -190,6 +190,62 @@ test("memory store lists filtered user transactions including recurring entries"
   );
 });
 
+test("memory store paginates user transactions with metadata", async () => {
+  const store = createMemoryStore({
+    users: [
+      {
+        id: "user-1",
+        name: "Paged User",
+        email: "paged@example.com",
+        passwordHash: "hash",
+        createdAt: "2026-04-10T00:00:00.000Z",
+      },
+    ],
+    transactions: ["01", "02", "03"].map((day) => ({
+      id: `txn-${day}`,
+      userId: "user-1",
+      title: `Transaction ${day}`,
+      notes: "",
+      amount: Number(day),
+      transactionDate: `2026-04-${day}`,
+      createdAt: `2026-04-${day}T00:00:00.000Z`,
+      updatedAt: `2026-04-${day}T00:00:00.000Z`,
+      type: "expense",
+      category: "Food",
+    })),
+  });
+
+  const firstPage = await store.listUserTransactions("user-1", {
+    limit: 2,
+    offset: 0,
+  });
+  const secondPage = await store.listUserTransactions("user-1", {
+    limit: 2,
+    offset: 2,
+  });
+
+  assert.deepEqual(
+    firstPage.map((entry) => entry.title),
+    ["Transaction 03", "Transaction 02"],
+  );
+  assert.deepEqual(firstPage.pagination, {
+    limit: 2,
+    offset: 0,
+    count: 2,
+    hasMore: true,
+  });
+  assert.deepEqual(
+    secondPage.map((entry) => entry.title),
+    ["Transaction 01"],
+  );
+  assert.deepEqual(secondPage.pagination, {
+    limit: 2,
+    offset: 2,
+    count: 1,
+    hasMore: false,
+  });
+});
+
 test("memory store returns SQL-compatible monthly summaries through the store interface", async () => {
   const store = createMemoryStore({
     users: [

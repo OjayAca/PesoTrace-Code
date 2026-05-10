@@ -17,6 +17,9 @@ const DEFAULT_DATA = {
   recurringTemplates: [],
 };
 
+const DEFAULT_TRANSACTION_PAGE_SIZE = 2550;
+const MAX_TRANSACTION_PAGE_SIZE = 2550;
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -203,6 +206,17 @@ function normalizeTransactionFilters(filters = {}) {
   const sortBy = String(filters.sortBy || "date").trim().toLowerCase() || "date";
   const sortOrder = normalizeSortOrder(filters.sortOrder || "desc");
   const includeRecurring = filters.includeRecurring !== false;
+  const limit = normalizePaginationInteger(filters.limit, {
+    defaultValue: DEFAULT_TRANSACTION_PAGE_SIZE,
+    min: 1,
+    max: MAX_TRANSACTION_PAGE_SIZE,
+    label: "Transaction limit",
+  });
+  const offset = normalizePaginationInteger(filters.offset, {
+    defaultValue: 0,
+    min: 0,
+    label: "Transaction offset",
+  });
 
   return {
     month,
@@ -214,7 +228,44 @@ function normalizeTransactionFilters(filters = {}) {
     sortBy,
     sortOrder,
     includeRecurring,
+    limit,
+    offset,
   };
+}
+
+function normalizePaginationInteger(value, { defaultValue, min, max = Number.MAX_SAFE_INTEGER, label }) {
+  if (value === null || value === undefined || value === "") {
+    return defaultValue;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isInteger(number) || number < min) {
+    throw new Error(`${label} must be an integer greater than or equal to ${min}.`);
+  }
+
+  return Math.min(number, max);
+}
+
+function withPaginationMetadata(transactions, { limit, offset, hasMore }) {
+  Object.defineProperty(transactions, "pagination", {
+    value: {
+      limit,
+      offset,
+      count: transactions.length,
+      hasMore,
+    },
+    enumerable: false,
+  });
+
+  return transactions;
+}
+
+function paginateTransactions(transactions, { limit, offset }) {
+  const window = transactions.slice(offset, offset + limit + 1);
+  const hasMore = window.length > limit;
+
+  return withPaginationMetadata(window.slice(0, limit), { limit, offset, hasMore });
 }
 
 function toIsoDateTime(value) {
@@ -705,7 +756,9 @@ export function createMemoryStore(seedData = {}) {
     },
     async listUserTransactions(userId, filters = {}) {
       const snapshot = createUserScopedSnapshot(data, userId);
-      return getComputedUserTransactions(userId, normalizeTransactionFilters(filters), snapshot);
+      const normalizedFilters = normalizeTransactionFilters(filters);
+      const transactions = getComputedUserTransactions(userId, normalizedFilters, snapshot);
+      return paginateTransactions(transactions, normalizedFilters);
     },
     async getUserRecurringTemplates(userId) {
       const snapshot = createUserScopedSnapshot(data, userId);
@@ -978,6 +1031,11 @@ export function createMySqlStore(env = process.env) {
     };
     const sortBy = sortColumns[normalizedFilters.sortBy] || "transaction_date";
     const sortDirection = normalizedFilters.sortOrder === "asc" ? "ASC" : "DESC";
+    const includeRecurringForMonth = normalizedFilters.includeRecurring && normalizedFilters.month;
+    const transactionLimit = includeRecurringForMonth
+      ? normalizedFilters.offset + normalizedFilters.limit + 1
+      : normalizedFilters.limit + 1;
+    const transactionOffset = includeRecurringForMonth ? 0 : normalizedFilters.offset;
     const pool = await getPool();
     const [transactions, recurringTemplates] = await Promise.all([
       pool.query(
@@ -985,10 +1043,11 @@ export function createMySqlStore(env = process.env) {
                 created_at AS createdAt, updated_at AS updatedAt, type, category
          FROM transactions
          WHERE ${conditions.join(" AND ")}
-         ORDER BY ${sortBy} ${sortDirection}, updated_at ${sortDirection}, id ${sortDirection}`,
-        values,
+         ORDER BY ${sortBy} ${sortDirection}, updated_at ${sortDirection}, id ${sortDirection}
+         LIMIT ? OFFSET ?`,
+        [...values, transactionLimit, transactionOffset],
       ),
-      normalizedFilters.includeRecurring && normalizedFilters.month
+      includeRecurringForMonth
         ? pool.query(
             `SELECT id, user_id AS userId, title, notes, amount, start_date AS startDate,
                     end_date AS endDate, type, category, created_at AS createdAt, updated_at AS updatedAt
@@ -1009,12 +1068,20 @@ export function createMySqlStore(env = process.env) {
         : Promise.resolve([[]]),
     ]);
 
-    return getComputedUserTransactions(userId, normalizedFilters, {
+    const computedTransactions = getComputedUserTransactions(userId, normalizedFilters, {
       users: [],
       transactions: transactions[0].map(normalizeTransactionFromRow),
       budgets: [],
       recurringTemplates: recurringTemplates[0].map(normalizeRecurringTemplateFromRow),
     });
+
+    return includeRecurringForMonth
+      ? paginateTransactions(computedTransactions, normalizedFilters)
+      : withPaginationMetadata(computedTransactions.slice(0, normalizedFilters.limit), {
+          limit: normalizedFilters.limit,
+          offset: normalizedFilters.offset,
+          hasMore: computedTransactions.length > normalizedFilters.limit,
+        });
   }
 
   async function getUserRecurringTemplates(userId) {

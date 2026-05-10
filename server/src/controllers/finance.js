@@ -40,10 +40,29 @@ export function getTransactions(store) {
       sortBy: req.query.sortBy || "",
       sortOrder: req.query.sortOrder || "",
       includeRecurring: req.query.includeRecurring !== "false",
+      limit: req.query.limit || "",
+      offset: req.query.offset || "",
     }));
-    const transactions = await store.listUserTransactions(req.auth.userId, query);
+    let transactions;
+    try {
+      transactions = await store.listUserTransactions(req.auth.userId, query);
+    } catch (error) {
+      if (/^Transaction (limit|offset) must be/.test(error.message)) {
+        throw new ClientError(error.message);
+      }
 
-    return res.json({ transactions });
+      throw error;
+    }
+
+    return res.json({
+      transactions,
+      pagination: transactions.pagination || {
+        limit: query.limit || 2550,
+        offset: query.offset || 0,
+        count: transactions.length,
+        hasMore: false,
+      },
+    });
   };
 }
 

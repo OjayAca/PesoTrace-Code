@@ -1795,6 +1795,82 @@ test("transactions support date range filtering and amount sorting", async (t) =
   );
 });
 
+test("transactions endpoint paginates results and reports metadata", async (t) => {
+  const user = {
+    id: "user-pagination",
+    name: "Pagination User",
+    email: "pagination@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({
+    users: [user],
+    transactions: ["01", "02", "03"].map((day) => ({
+      id: `txn-page-${day}`,
+      userId: "user-pagination",
+      title: `Paged ${day}`,
+      amount: Number(day),
+      type: "expense",
+      category: "Food",
+      notes: "",
+      transactionDate: `2026-04-${day}`,
+      createdAt: `2026-04-${day}T00:00:00.000Z`,
+      updatedAt: `2026-04-${day}T00:00:00.000Z`,
+    })),
+  });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/transactions?limit=2&offset=1", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    data.transactions.map((transaction) => transaction.title),
+    ["Paged 02", "Paged 01"],
+  );
+  assert.deepEqual(data.pagination, {
+    limit: 2,
+    offset: 1,
+    count: 2,
+    hasMore: false,
+  });
+
+  const defaultPage = await request("/api/transactions", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(defaultPage.data.pagination.limit, 2550);
+  assert.equal(defaultPage.data.pagination.offset, 0);
+});
+
+test("transactions endpoint rejects invalid pagination parameters", async (t) => {
+  const user = {
+    id: "user-invalid-pagination",
+    name: "Invalid Pagination User",
+    email: "invalid-pagination@example.com",
+    passwordHash: await bcrypt.hash("secret123", 1),
+    createdAt: "2026-04-10T00:00:00.000Z",
+  };
+  const token = createToken(user);
+  const { server, request } = await startTestApp({ users: [user] });
+  t.after(() => closeServer(server));
+
+  const { response, data } = await request("/api/transactions?limit=0", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(data.message, "Transaction limit must be an integer greater than or equal to 1.");
+});
+
 test("settings preferences and password updates work for the authenticated user", async (t) => {
   const user = {
     id: "user-1",

@@ -2,6 +2,23 @@ import { toAmount, normalizeDate, normalizeTransactionType, normalizeCategory } 
 
 const TITLE_MAX_LENGTH = 120;
 const NOTES_MAX_LENGTH = 2000;
+export const LOCAL_CLIENT_ORIGIN = "http://localhost:5173";
+export const PRODUCTION_CLIENT_ORIGIN = "https://pesotrace.vercel.app";
+
+export function getDefaultClientOrigin(env = process.env) {
+  const configured = String(env.CLIENT_ORIGIN || "").trim();
+  const origins = configured
+    ? configured.split(",").map((value) => value.trim()).filter(Boolean)
+    : [];
+
+  if (!configured && env.NODE_ENV !== "production") {
+    origins.push(LOCAL_CLIENT_ORIGIN);
+  }
+
+  origins.push(PRODUCTION_CLIENT_ORIGIN);
+
+  return [...new Set(origins)].join(",");
+}
 
 export function getUserPreferences(user = {}) {
   return {
@@ -122,19 +139,34 @@ export function isLocalDevOrigin(origin) {
   }
 }
 
-export function isAllowedOrigin(origin, clientOrigin = "http://localhost:5173") {
+function normalizeOrigin(origin) {
+  const value = String(origin || "").trim();
+
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value.replace(/\/+$/, "");
+  }
+}
+
+export function isAllowedOrigin(origin, clientOrigin = getDefaultClientOrigin()) {
+  const requestOrigin = normalizeOrigin(origin);
   const allowedOrigins = new Set(
-    clientOrigin
+    String(clientOrigin || "")
       .split(",")
-      .map((value) => value.trim())
+      .map(normalizeOrigin)
       .filter(Boolean),
   );
 
-  if (allowedOrigins.has(origin)) {
+  if (allowedOrigins.has(requestOrigin)) {
     return true;
   }
 
-  if (process.env.NODE_ENV !== "production" && isLocalDevOrigin(origin)) {
+  if (process.env.NODE_ENV !== "production" && isLocalDevOrigin(requestOrigin)) {
     return true;
   }
 
@@ -149,7 +181,7 @@ export function isAllowedOrigin(origin, clientOrigin = "http://localhost:5173") 
       const alternateHost = url.hostname === "localhost" ? "127.0.0.1" : "localhost";
       const alternateOrigin = `${url.protocol}//${alternateHost}${url.port ? `:${url.port}` : ""}`;
 
-      if (origin === alternateOrigin) {
+      if (requestOrigin === alternateOrigin) {
         return true;
       }
     } catch {

@@ -6,11 +6,12 @@ import { ensureJwtSecret } from "./auth.js";
 import { ensureEmailConfig } from "./email.js";
 import { createMemoryStore, createStoreFromEnv, normalizeStoreData } from "./store.js";
 import { createApp } from "./app.js";
+import { getDefaultClientOrigin } from "./utils/helpers.js";
 
 dotenv.config();
 
 const DEFAULT_PORT = Number(process.env.PORT || 5000);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const CLIENT_ORIGIN = getDefaultClientOrigin(process.env);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const bundledSnapshotPath = path.resolve(__dirname, "../data/db.json");

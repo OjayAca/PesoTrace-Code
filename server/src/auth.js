@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
-import { getRequestOrigin, isAllowedOrigin } from "./utils/helpers.js";
+import { getDefaultClientOrigin, getRequestOrigin, isAllowedOrigin } from "./utils/helpers.js";
 
 export const AUTH_COOKIE_NAME = "pesotrace-session";
 export const CSRF_COOKIE_NAME = "pesotrace-csrf";
@@ -305,7 +305,7 @@ export function requireAuth(req, res, next) {
   return authenticateRequest(req, res, next);
 }
 
-export function requireTrustedRequestOrigin(clientOrigin = "http://localhost:5173") {
+export function requireTrustedRequestOrigin(clientOrigin = getDefaultClientOrigin()) {
   return (req, res, next) => {
     const method = String(req.method || "GET").toUpperCase();
 
@@ -325,7 +325,7 @@ export function requireTrustedRequestOrigin(clientOrigin = "http://localhost:517
   };
 }
 
-export function requireTrustedOrigin(clientOrigin = "http://localhost:5173") {
+export function requireTrustedOrigin(clientOrigin = getDefaultClientOrigin()) {
   return (req, res, next) => {
     const method = String(req.method || "GET").toUpperCase();
 

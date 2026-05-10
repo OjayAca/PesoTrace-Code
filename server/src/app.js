@@ -4,7 +4,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { optionalAuth, requireAuth, requireTrustedOrigin, requireTrustedRequestOrigin } from "./auth.js";
 import { DEFAULT_CATEGORIES } from "./finance.js";
-import { isAllowedOrigin } from "./utils/helpers.js";
+import { getDefaultClientOrigin, isAllowedOrigin } from "./utils/helpers.js";
 import { safeErrorResponse } from "./utils/errors.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
 import { createEmailService } from "./email.js";
@@ -48,7 +48,7 @@ function requireHttpsInProduction(env = process.env) {
 
 export function createApp({
   store,
-  clientOrigin = "http://localhost:5173",
+  clientOrigin,
   env = process.env,
   rateLimits = {},
   emailService = createEmailService(env),
@@ -99,8 +99,9 @@ export function createApp({
   }
 
   const app = express();
-  const requireTrustedSessionOrigin = requireTrustedOrigin(clientOrigin);
-  const requireTrustedAuthOrigin = requireTrustedRequestOrigin(clientOrigin);
+  const allowedClientOrigins = clientOrigin || getDefaultClientOrigin(env);
+  const requireTrustedSessionOrigin = requireTrustedOrigin(allowedClientOrigins);
+  const requireTrustedAuthOrigin = requireTrustedRequestOrigin(allowedClientOrigins);
   const registerRateLimit = createLimiter(rateLimits.auth);
   const loginRateLimit = createLimiter(rateLimits.auth);
   const passwordRateLimit = createLimiter({
@@ -126,7 +127,7 @@ export function createApp({
     cors({
       credentials: true,
       origin(origin, callback) {
-        callback(null, isAllowedOrigin(origin, clientOrigin));
+        callback(null, isAllowedOrigin(origin, allowedClientOrigins));
       },
     }),
   );

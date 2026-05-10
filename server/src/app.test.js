@@ -1105,6 +1105,61 @@ test("cors accepts other localhost dev ports in development", async (t) => {
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
 });
 
+test("cors accepts the production Vercel frontend by default", async (t) => {
+  const { server, request } = await startTestApp(
+    {},
+    {
+      clientOrigin: undefined,
+      env: {
+        NODE_ENV: "production",
+      },
+    },
+  );
+  t.after(() => closeServer(server));
+
+  const { response } = await request("/api/auth/login", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://pesotrace.vercel.app",
+      "X-Forwarded-Proto": "https",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "Content-Type",
+    },
+  });
+
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://pesotrace.vercel.app");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+});
+
+test("cors keeps the production Vercel frontend allowed with configured client origins", async (t) => {
+  const { server, request } = await startTestApp(
+    {},
+    {
+      clientOrigin: undefined,
+      env: {
+        NODE_ENV: "production",
+        CLIENT_ORIGIN: "https://custom.pesotrace.example",
+      },
+    },
+  );
+  t.after(() => closeServer(server));
+
+  const { response } = await request("/api/auth/login", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://pesotrace.vercel.app",
+      "X-Forwarded-Proto": "https",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "Content-Type",
+    },
+  });
+
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://pesotrace.vercel.app");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+});
+
 test("dashboard summary leaves budget unset when no monthly budget exists", async (t) => {
   const user = {
     id: "user-1",

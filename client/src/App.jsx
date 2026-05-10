@@ -3,6 +3,7 @@ import { Zap } from "lucide-react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthScreen } from "./pages/Auth/AuthScreen";
 import { Dashboard } from "./pages/Dashboard/Dashboard";
+import { LandingPage } from "./pages/Landing/LandingPage";
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -27,7 +28,7 @@ function AppRoutes() {
       <Route
         path="/"
         element={
-          user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />
+          user ? <Navigate to="/dashboard" replace /> : <LandingPage />
         }
       />
       <Route

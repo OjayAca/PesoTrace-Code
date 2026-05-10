@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .env
+.railway/
 .DS_Store
 server/data/
 .runlogs/
-

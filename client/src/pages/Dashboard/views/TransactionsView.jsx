@@ -399,6 +399,7 @@ export function TransactionsView({
                             type="button"
                             onClick={() => handleDuplicateTransaction(transaction)}
                             title="Duplicate"
+                            aria-label={`Duplicate ${transaction.title}`}
                           >
                             <Copy size={14} />
                           </button>
@@ -457,6 +458,13 @@ export function TransactionsView({
                       {transaction.notes || "No notes added"}
                     </p>
                     <div className="mobile-transaction-actions">
+                      <button
+                        className="action-button"
+                        type="button"
+                        onClick={() => handleDuplicateTransaction(transaction)}
+                      >
+                        <Copy size={13} /> Duplicate
+                      </button>
                       <button
                         className="action-button"
                         type="button"
@@ -742,6 +750,7 @@ export function TransactionsView({
                       type="button"
                       onClick={() => handleUseRecurringTemplate(template)}
                       title="Use template"
+                      aria-label={`Use ${template.title} as a transaction`}
                     >
                       <Copy size={14} />
                     </button>
@@ -749,6 +758,8 @@ export function TransactionsView({
                       className="icon-btn"
                       type="button"
                       onClick={() => handleEditRecurring(template)}
+                      title="Edit recurring template"
+                      aria-label={`Edit recurring template ${template.title}`}
                     >
                       <Pencil size={14} />
                     </button>
@@ -756,6 +767,8 @@ export function TransactionsView({
                       className="icon-btn danger"
                       type="button"
                       onClick={() => handleDeleteRecurring(template.id)}
+                      title="Delete recurring template"
+                      aria-label={`Delete recurring template ${template.title}`}
                     >
                       <Trash2 size={14} />
                     </button>

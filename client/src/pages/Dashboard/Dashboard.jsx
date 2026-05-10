@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../AuthContext";
 import { api } from "../../api";
-import { LogOut, Moon, Sun, Wallet, TrendingDown, TrendingUp, PieChart } from "lucide-react";
+import { LogOut, Moon, Sun, Wallet, TrendingDown, TrendingUp, PieChart, Plus } from "lucide-react";
 import { Routes, Route, useNavigate, useLocation, NavLink, Navigate } from "react-router-dom";
 
 import { FALLBACK_CATEGORIES, TABS, TRANSACTION_FILTERS_STORAGE_KEY, ONBOARDING_DISMISS_STORAGE_KEY, LAST_EXPORT_STORAGE_KEY, DEFAULT_TRANSACTION_FILTERS } from "../../utils/constants";
@@ -96,6 +96,7 @@ export function Dashboard() {
   const [pendingPrint, setPendingPrint] = useState(false);
   const loadIdRef = useRef(0);
   const monthPickerRef = useRef(null);
+  const mobileMonthPickerRef = useRef(null);
   const reportTitleRef = useRef("");
 
   function downloadPdf(filename, bytes) {
@@ -117,8 +118,8 @@ export function Dashboard() {
     setFlash(null);
   }
 
-  function openMonthPicker() {
-    const monthInput = monthPickerRef.current;
+  function openMonthPicker(inputRef = monthPickerRef) {
+    const monthInput = inputRef.current;
 
     if (!monthInput) {
       return;
@@ -561,6 +562,8 @@ export function Dashboard() {
   }, [budgetValue, settingsData?.stats?.recurringCount, settingsData?.stats?.transactionCount, settingsData?.user?.email, settingsData?.user?.name]);
   const onboardingComplete = onboardingChecklist.every((item) => item.complete);
   const onboardingProgress = onboardingChecklist.filter((item) => item.complete).length;
+  const showMobilePrimaryAction =
+    location.pathname === "/dashboard" || location.pathname.endsWith("/transactions");
 
   const transactionInsights = useMemo(() => {
     if (!transactions.length) {
@@ -1163,7 +1166,7 @@ export function Dashboard() {
   return (
     <main className="app-shell workspace-shell">
       <header className="workspace-header">
-        <nav className="workspace-nav">
+        <nav className="workspace-nav desktop-workspace-nav" aria-label="Workspace navigation">
           <div className="nav-brand">
             <div className="brand-mark">PT</div>
             <span>PesoTrace</span>
@@ -1192,7 +1195,11 @@ export function Dashboard() {
                 onChange={(event) => setSelectedMonth(event.target.value)}
                 aria-label="Select month"
               />
-              <button type="button" className="month-display" onClick={openMonthPicker}>
+              <button
+                type="button"
+                className="month-display"
+                onClick={() => openMonthPicker(monthPickerRef)}
+              >
                 {monthLabel}
               </button>
             </div>
@@ -1214,6 +1221,52 @@ export function Dashboard() {
             </button>
           </div>
         </nav>
+
+        <div className="mobile-workspace-header">
+          <div className="mobile-brand-lockup">
+            <div className="brand-mark small">PT</div>
+            <div>
+              <span>PesoTrace</span>
+              <strong>{monthLabel}</strong>
+            </div>
+          </div>
+
+          <div className="mobile-header-actions">
+            <div className="month-selector mobile-month-selector">
+              <input
+                type="month"
+                ref={mobileMonthPickerRef}
+                value={selectedMonth}
+                onChange={(event) => setSelectedMonth(event.target.value)}
+                aria-label="Select month"
+              />
+              <button
+                type="button"
+                className="month-display"
+                onClick={() => openMonthPicker(mobileMonthPickerRef)}
+                aria-label={`Change month, currently ${monthLabel}`}
+              >
+                {monthLabel}
+              </button>
+            </div>
+
+            <button
+              className="icon-btn"
+              onClick={handleThemeToggle}
+              aria-label="Toggle theme"
+            >
+              {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+
+            <button
+              className="icon-btn danger"
+              onClick={handleLogout}
+              aria-label="Log out"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
       </header>
 
       <div className="workspace-body">
@@ -1337,6 +1390,32 @@ export function Dashboard() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>
+
+      {showMobilePrimaryAction ? (
+        <button
+          className="mobile-primary-action"
+          type="button"
+          onClick={() => handleStartNewTransaction()}
+          aria-label="New transaction"
+        >
+          <Plus size={24} />
+        </button>
+      ) : null}
+
+      <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+        {TABS.map((tab) => (
+          <NavLink
+            key={tab.id}
+            to={tab.id === "dashboard" ? "/dashboard" : `/dashboard/${tab.id}`}
+            end={tab.id === "dashboard"}
+            className={({ isActive }) => `mobile-nav-item ${isActive ? "active" : ""}`}
+            aria-label={tab.label}
+          >
+            <tab.icon size={19} />
+            <span>{tab.label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
       {flash ? (
         <div className={`flash flash-${flash.type}`} role="status">

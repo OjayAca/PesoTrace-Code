@@ -1,4 +1,29 @@
-const API_URL = import.meta.env?.VITE_API_URL || "http://localhost:5000/api";
+const LOCAL_API_URL = "http://localhost:5000/api";
+const PRODUCTION_API_URL = "https://pesotrace-backend-production.up.railway.app/api";
+
+export function getApiUrl(env = import.meta.env) {
+  const configured = String(env?.VITE_API_URL || "").trim();
+
+  if (configured) {
+    const normalized = configured.replace(/\/+$/, "");
+
+    try {
+      const url = new URL(normalized);
+
+      if (env?.PROD && ["localhost", "127.0.0.1"].includes(url.hostname)) {
+        return PRODUCTION_API_URL;
+      }
+    } catch {
+      // Relative API URLs are valid for same-origin deployments.
+    }
+
+    return normalized;
+  }
+
+  return env?.PROD ? PRODUCTION_API_URL : LOCAL_API_URL;
+}
+
+const API_URL = getApiUrl();
 export const AUTH_EXPIRED_EVENT = "pesotrace:auth-expired";
 const API_REQUEST_TIMEOUT_MS = 12000;
 let csrfToken = "";

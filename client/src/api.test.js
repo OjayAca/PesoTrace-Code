@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getApiUrl } from "./api.js";
 
 function installWindowStub() {
   const listeners = new Map();
@@ -32,6 +33,31 @@ function installWindowStub() {
 function restoreWindowStub(originalWindow) {
   global.window = originalWindow;
 }
+
+test("getApiUrl defaults to the local API outside production", () => {
+  assert.equal(getApiUrl({ DEV: true }), "http://localhost:5000/api");
+});
+
+test("getApiUrl defaults to the deployed API in production", () => {
+  assert.equal(
+    getApiUrl({ PROD: true }),
+    "https://pesotrace-backend-production.up.railway.app/api",
+  );
+});
+
+test("getApiUrl prefers configured API URLs and trims trailing slashes", () => {
+  assert.equal(
+    getApiUrl({ PROD: true, VITE_API_URL: "https://api.example.com/api/" }),
+    "https://api.example.com/api",
+  );
+});
+
+test("getApiUrl ignores localhost API URLs in production", () => {
+  assert.equal(
+    getApiUrl({ PROD: true, VITE_API_URL: "http://localhost:5000/api" }),
+    "https://pesotrace-backend-production.up.railway.app/api",
+  );
+});
 
 test("logout resolves and dispatches auth expired when the session already expired", async () => {
   const originalWindow = global.window;

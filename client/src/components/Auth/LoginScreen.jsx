@@ -1,4 +1,5 @@
-import { Moon, Sun, AlertCircle } from "lucide-react";
+import { Moon, Sun, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
 
 export function LoginScreen({
   theme,
@@ -12,6 +13,8 @@ export function LoginScreen({
   onSwitch,
   onForgotPassword,
 }) {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <section className="panel auth-panel auth-panel-login">
       <div className="auth-panel-top">
@@ -55,16 +58,39 @@ export function LoginScreen({
           <div className="field-label">
             <span>Password</span>
           </div>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, password: event.target.value }))
-            }
-            placeholder=""
-            autoComplete="current-password"
-            required
-          />
+          <div style={{ position: "relative" }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={form.password}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, password: event.target.value }))
+              }
+              placeholder=""
+              autoComplete="current-password"
+              style={{ paddingRight: "40px" }}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              style={{
+                position: "absolute",
+                right: "10px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-muted)",
+              }}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
           <button type="button" className="text-button" onClick={onForgotPassword}>
             Forgot password?
           </button>

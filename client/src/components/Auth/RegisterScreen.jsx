@@ -1,4 +1,5 @@
 import { Moon, Sun, AlertCircle } from "lucide-react";
+import { useState } from "react";
 
 export function RegisterScreen({
   theme,
@@ -10,6 +11,8 @@ export function RegisterScreen({
   onSubmit,
   onSwitch,
 }) {
+  const [showPasswords, setShowPasswords] = useState(false);
+
   return (
     <section className="panel auth-panel auth-panel-register">
       <div className="auth-panel-top">
@@ -71,14 +74,14 @@ export function RegisterScreen({
               <span>Password</span>
             </div>
             <input
-              type="password"
+              type={showPasswords ? "text" : "password"}
               value={form.password}
               onChange={(event) =>
                 setForm((current) => ({ ...current, password: event.target.value }))
               }
               minLength={6}
               placeholder="••••••••"
-              autoComplete="new-password"
+              autoComplete="off"
               required
             />
           </label>
@@ -88,7 +91,7 @@ export function RegisterScreen({
               <span>Confirm</span>
             </div>
             <input
-              type="password"
+              type={showPasswords ? "text" : "password"}
               value={form.confirmPassword}
               onChange={(event) =>
                 setForm((current) => ({
@@ -98,10 +101,20 @@ export function RegisterScreen({
               }
               minLength={6}
               placeholder="••••••••"
-              autoComplete="new-password"
+              autoComplete="off"
               required
             />
           </label>
+        </div>
+
+        <div className="show-password-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => setShowPasswords(!showPasswords)}>
+          <input
+            type="checkbox"
+            checked={showPasswords}
+            readOnly
+            style={{ width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
+          />
+          <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Show Password</span>
         </div>
 
         {error ? (

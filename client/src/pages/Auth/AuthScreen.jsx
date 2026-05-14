@@ -106,6 +106,8 @@ export function AuthScreen() {
       }
 
       await register(registerForm);
+      setLoginMessage("Account created successfully. You can sign in now.");
+      setScreen("login");
     } catch (submitError) {
       setRegisterError(submitError.message);
     } finally {

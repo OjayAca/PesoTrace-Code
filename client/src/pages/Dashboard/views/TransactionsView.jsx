@@ -735,55 +735,64 @@ export function TransactionsView({
               <div className="empty-inline">No recurring templates yet.</div>
             ) : (
               recurringTemplates.map((template) => (
-                <div className="list-row list-row-compact" key={template.id}>
-                  <div>
-                    <strong>{template.title}</strong>
-                    <p>
-                      Starts {formatDate(template.startDate)}
-                      {template.endDate ? ` - Ends ${formatDate(template.endDate)}` : ""}
-                      {" - "}
-                      {template.type} -{" "}
-                      {template.category}
-                    </p>
-                  </div>
-                  <div className="row-actions">
+                <article className="mobile-transaction-card" key={template.id}>
+                  <div className="mobile-transaction-head">
+                    <div>
+                      <p className="mobile-transaction-title">{template.title}</p>
+                      <span>
+                        Starts {formatDate(template.startDate)}
+                        {template.endDate ? ` - Ends ${formatDate(template.endDate)}` : ""}
+                        {" - "}
+                        <span style={{ textTransform: "capitalize" }}>{template.type}</span> -{" "}
+                        {template.category}
+                      </span>
+                    </div>
                     <strong
                       className={
-                        template.type === "income" ? "amount-positive" : "amount-negative"
+                        template.type === "income"
+                          ? "amount-cell amount-positive"
+                          : "amount-cell amount-negative"
                       }
                     >
                       {template.type === "income" ? "+" : "-"}
                       {formatCurrency(template.amount)}
                     </strong>
+                  </div>
+                  {template.notes && (
+                    <p className="mobile-transaction-notes">
+                      {template.notes}
+                    </p>
+                  )}
+                  <div className="mobile-transaction-actions">
                     <button
-                      className="icon-btn"
+                      className="action-button"
                       type="button"
                       onClick={() => handleUseRecurringTemplate(template)}
                       title="Use template"
                       aria-label={`Use ${template.title} as a transaction`}
                     >
-                      <Copy size={14} />
+                      <Copy size={13} /> Use
                     </button>
                     <button
-                      className="icon-btn"
+                      className="action-button"
                       type="button"
                       onClick={() => handleEditRecurring(template)}
                       title="Edit recurring template"
                       aria-label={`Edit recurring template ${template.title}`}
                     >
-                      <Pencil size={14} />
+                      <Pencil size={13} /> Edit
                     </button>
                     <button
-                      className="icon-btn danger"
+                      className="action-button danger"
                       type="button"
                       onClick={() => handleDeleteRecurring(template.id)}
                       title="Delete recurring template"
                       aria-label={`Delete recurring template ${template.title}`}
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={13} /> Delete
                     </button>
                   </div>
-                </div>
+                </article>
               ))
             )}
           </div>

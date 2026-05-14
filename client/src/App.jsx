@@ -10,14 +10,11 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <main className="app-shell">
-        <section className="panel loading-panel">
-          <div>
-            <p className="eyebrow">
-              <Zap size={14} /> PesoTrace
-            </p>
-            <h2>Loading your finance workspace...</h2>
-          </div>
+      <main className="app-shell animate-fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--bg)' }}>
+        <section className="panel animate-scale-in" style={{ padding: '3rem', textAlign: 'center', maxWidth: '400px' }}>
+          <div className="brand-mark" style={{ margin: '0 auto 1.5rem' }}>PT</div>
+          <h2 style={{ fontSize: '1.25rem' }}>Preparing workspace...</h2>
+          <p className="text-muted" style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>Securely loading your finance data.</p>
         </section>
       </main>
     );

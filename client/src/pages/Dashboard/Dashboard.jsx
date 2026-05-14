@@ -18,11 +18,14 @@ import { TransactionsView } from "./views/TransactionsView";
 import { ReportsView } from "./views/ReportsView";
 import { SettingsView } from "./views/SettingsView";
 
+import { Sidebar } from "../../components/Layout/Sidebar";
+
 export function Dashboard() {
   const { user, logout, setCurrentUser } = useAuth();
   const { theme, setTheme } = useTheme(user);
   const navigate = useNavigate();
   const location = useLocation();
+  // ... rest of state declarations ...
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [dashboard, setDashboard] = useState(null);
@@ -96,9 +99,9 @@ export function Dashboard() {
   const [pendingPrint, setPendingPrint] = useState(false);
   const loadIdRef = useRef(0);
   const monthPickerRef = useRef(null);
-  const mobileMonthPickerRef = useRef(null);
   const reportTitleRef = useRef("");
 
+  // ... helper functions ...
   function downloadPdf(filename, bytes) {
     const blob = new Blob([bytes], { type: "application/pdf" });
     const objectUrl = URL.createObjectURL(blob);
@@ -129,8 +132,8 @@ export function Dashboard() {
       try {
         monthInput.showPicker();
         return;
-      } catch {
-        // Ignore
+      } catch (err) {
+        // Fallback if showPicker is blocked or fails
       }
     }
 
@@ -562,8 +565,6 @@ export function Dashboard() {
   }, [budgetValue, settingsData?.stats?.recurringCount, settingsData?.stats?.transactionCount, settingsData?.user?.email, settingsData?.user?.name]);
   const onboardingComplete = onboardingChecklist.every((item) => item.complete);
   const onboardingProgress = onboardingChecklist.filter((item) => item.complete).length;
-  const showMobilePrimaryAction =
-    location.pathname === "/dashboard" || location.pathname.endsWith("/transactions");
 
   const transactionInsights = useMemo(() => {
     if (!transactions.length) {
@@ -1163,259 +1164,169 @@ export function Dashboard() {
     );
   }
 
+  const currentPath = location.pathname;
+  let activeViewId = "main";
+  if (currentPath.includes("/transactions")) activeViewId = "transactions";
+  else if (currentPath.includes("/reports")) activeViewId = "reports";
+  else if (currentPath.includes("/settings")) activeViewId = "settings";
+
   return (
-    <main className="app-shell workspace-shell">
-      <header className="workspace-header">
-        <nav className="workspace-nav desktop-workspace-nav" aria-label="Workspace navigation">
-          <div className="nav-brand">
-            <div className="brand-mark">PT</div>
-            <span>PesoTrace</span>
+    <div className="dashboard-layout">
+      <Sidebar 
+        activeView={activeViewId} 
+        setActiveView={(view) => navigate(view === "main" ? "/dashboard" : `/dashboard/${view}`)} 
+        theme={theme}
+        toggleTheme={handleThemeToggle}
+        onLogout={handleLogout}
+      />
+      
+      <main className="dashboard-content">
+        <header className="content-header">
+          <div className="header-meta">
+            <h1>{TABS.find(t => (t.id === "dashboard" ? "main" : t.id) === activeViewId)?.label || "Dashboard"}</h1>
+            <p>{monthLabel}</p>
           </div>
 
-          <div className="nav-group">
-            {TABS.map((tab) => (
-              <NavLink
-                key={tab.id}
-                to={tab.id === "dashboard" ? "/dashboard" : `/dashboard/${tab.id}`}
-                end={tab.id === "dashboard"}
-                className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-              >
-                <tab.icon size={16} />
-                <span>{tab.label}</span>
-              </NavLink>
-            ))}
-          </div>
-
-          <div className="nav-group nav-group-end">
-            <div className="month-selector">
+          <div className="header-actions">
+            <div className="month-picker-wrapper">
               <input
                 type="month"
                 ref={monthPickerRef}
                 value={selectedMonth}
                 onChange={(event) => setSelectedMonth(event.target.value)}
-                aria-label="Select month"
+                className="hidden-picker"
               />
-              <button
-                type="button"
-                className="month-display"
+              <button 
+                className="secondary-button compact-button"
                 onClick={() => openMonthPicker(monthPickerRef)}
               >
                 {monthLabel}
               </button>
             </div>
-
-            <button
-              className="icon-btn"
-              onClick={handleThemeToggle}
-              aria-label="Toggle theme"
-            >
-              {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
-
-            <button
-              className="icon-btn danger"
-              onClick={handleLogout}
-              aria-label="Log out"
-            >
-              <LogOut size={18} />
-            </button>
           </div>
-        </nav>
+        </header>
 
-        <div className="mobile-workspace-header">
-          <div className="mobile-brand-lockup">
-            <div className="brand-mark small">PT</div>
-            <div>
-              <span>PesoTrace</span>
-              <strong>{monthLabel}</strong>
-            </div>
-          </div>
-
-          <div className="mobile-header-actions">
-            <div className="month-selector mobile-month-selector">
-              <input
-                type="month"
-                ref={mobileMonthPickerRef}
-                value={selectedMonth}
-                onChange={(event) => setSelectedMonth(event.target.value)}
-                aria-label="Select month"
-              />
-              <button
-                type="button"
-                className="month-display"
-                onClick={() => openMonthPicker(mobileMonthPickerRef)}
-                aria-label={`Change month, currently ${monthLabel}`}
-              >
-                {monthLabel}
-              </button>
-            </div>
-
-            <button
-              className="icon-btn"
-              onClick={handleThemeToggle}
-              aria-label="Toggle theme"
-            >
-              {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
-
-            <button
-              className="icon-btn danger"
-              onClick={handleLogout}
-              aria-label="Log out"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
+        <div className="content-body">
+          <Routes>
+            <Route
+              index
+              element={
+                <MainDashboard
+                  user={user}
+                  monthLabel={monthLabel}
+                  dashboard={dashboard}
+                  transactionInsights={transactionInsights}
+                  statusMeta={budgetStatusMeta}
+                  budgetCardLabel={budgetCardLabel}
+                  budgetCardHeadline={budgetCardHeadline}
+                  budgetCardCopy={budgetCardCopy}
+                  progress={progress}
+                  budgetPaceCopy={budgetPaceCopy}
+                  metricCards={metricCards}
+                  latestTransactions={latestTransactions}
+                  dashboardSearch={dashboardSearch}
+                  setDashboardSearch={setDashboardSearch}
+                  dashboardSearchResults={dashboardSearchResults}
+                  loadingDashboardSearch={loadingDashboardSearch}
+                  handleEditTransaction={handleEditTransaction}
+                  handleDuplicateTransaction={handleDuplicateTransaction}
+                  budgetAlert={budgetAlert}
+                  setActiveView={(view) => navigate(`/dashboard/${view}`)}
+                  averageExpense={averageExpense}
+                  onboardingComplete={onboardingComplete}
+                  checklistDismissed={checklistDismissed}
+                  dismissOnboardingChecklist={dismissOnboardingChecklist}
+                  onboardingChecklist={onboardingChecklist}
+                  onboardingProgress={onboardingProgress}
+                  handleStartNewTransaction={handleStartNewTransaction}
+                />
+              }
+            />
+            <Route
+              path="transactions"
+              element={
+                <TransactionsView
+                  monthLabel={monthLabel}
+                  transactionForm={transactionForm}
+                  latestManualTransaction={latestManualTransaction}
+                  handleStartNewTransaction={handleStartNewTransaction}
+                  resetTransactionForm={resetTransactionForm}
+                  handleTransactionSubmit={handleTransactionSubmit}
+                  setTransactionForm={setTransactionForm}
+                  savingTransaction={savingTransaction}
+                  categories={categories}
+                  handleEditTransaction={handleEditTransaction}
+                  handleDeleteTransaction={handleDeleteTransaction}
+                  handleDuplicateTransaction={handleDuplicateTransaction}
+                  clearTransactionFilters={clearTransactionFilters}
+                  filters={filters}
+                  setFilters={setFilters}
+                  loadingTransactions={loadingTransactions}
+                  transactions={transactions}
+                  budgetAmount={budgetAmount}
+                  setBudgetAmount={setBudgetAmount}
+                  handleBudgetSubmit={handleBudgetSubmit}
+                  savingBudget={savingBudget}
+                  monthlyBudgetLocked={monthlyBudgetLocked}
+                  budgetTopUpAmount={budgetTopUpAmount}
+                  setBudgetTopUpAmount={setBudgetTopUpAmount}
+                  handleBudgetTopUp={handleBudgetTopUp}
+                  recurringForm={recurringForm}
+                  resetRecurringForm={resetRecurringForm}
+                  handleRecurringSubmit={handleRecurringSubmit}
+                  setRecurringForm={setRecurringForm}
+                  savingRecurring={savingRecurring}
+                  recurringTemplates={recurringTemplates}
+                  handleUseRecurringTemplate={handleUseRecurringTemplate}
+                  handleEditRecurring={handleEditRecurring}
+                  handleDeleteRecurring={handleDeleteRecurring}
+                />
+              }
+            />
+            <Route
+              path="reports"
+              element={
+                <ReportsView
+                  monthLabel={monthLabel}
+                  handleReportPdfExport={handleReportPdfExport}
+                  handleReportPrint={handleReportPrint}
+                  reports={reports}
+                  trendMaxExpense={trendMaxExpense}
+                  reportComparisons={reportComparisons}
+                  transactions={transactions}
+                  recurringTotal={recurringTotal}
+                />
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <SettingsView
+                  handleProfileSubmit={handleProfileSubmit}
+                  profileForm={profileForm}
+                  setProfileForm={setProfileForm}
+                  savingProfile={savingProfile}
+                  handlePreferencesSubmit={handlePreferencesSubmit}
+                  preferencesForm={preferencesForm}
+                  setPreferencesForm={setPreferencesForm}
+                  savingPreferences={savingPreferences}
+                  handlePasswordSubmit={handlePasswordSubmit}
+                  passwordForm={passwordForm}
+                  setPasswordForm={setPasswordForm}
+                  savingPassword={savingPassword}
+                  settingsData={settingsData}
+                  lastExportedAt={lastExportedAt}
+                  formatDateTime={formatDateTime}
+                  handleExportData={handleExportData}
+                  handleExportCsv={handleExportCsv}
+                  handleClearData={handleClearData}
+                />
+              }
+            />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </div>
-      </header>
-
-      <div className="workspace-body">
-        <Routes>
-          <Route
-            index
-            element={
-              <MainDashboard
-                user={user}
-                monthLabel={monthLabel}
-                dashboard={dashboard}
-                transactionInsights={transactionInsights}
-                statusMeta={budgetStatusMeta}
-                budgetCardLabel={budgetCardLabel}
-                budgetCardHeadline={budgetCardHeadline}
-                budgetCardCopy={budgetCardCopy}
-                progress={progress}
-                budgetPaceCopy={budgetPaceCopy}
-                metricCards={metricCards}
-                latestTransactions={latestTransactions}
-                dashboardSearch={dashboardSearch}
-                setDashboardSearch={setDashboardSearch}
-                dashboardSearchResults={dashboardSearchResults}
-                loadingDashboardSearch={loadingDashboardSearch}
-                handleEditTransaction={handleEditTransaction}
-                handleDuplicateTransaction={handleDuplicateTransaction}
-                budgetAlert={budgetAlert}
-                setActiveView={(view) => navigate(`/dashboard/${view}`)}
-                averageExpense={averageExpense}
-                onboardingComplete={onboardingComplete}
-                checklistDismissed={checklistDismissed}
-                dismissOnboardingChecklist={dismissOnboardingChecklist}
-                onboardingChecklist={onboardingChecklist}
-                onboardingProgress={onboardingProgress}
-                handleStartNewTransaction={handleStartNewTransaction}
-              />
-            }
-          />
-          <Route
-            path="transactions"
-            element={
-              <TransactionsView
-                monthLabel={monthLabel}
-                transactionForm={transactionForm}
-                latestManualTransaction={latestManualTransaction}
-                handleStartNewTransaction={handleStartNewTransaction}
-                resetTransactionForm={resetTransactionForm}
-                handleTransactionSubmit={handleTransactionSubmit}
-                setTransactionForm={setTransactionForm}
-                savingTransaction={savingTransaction}
-                categories={categories}
-                handleEditTransaction={handleEditTransaction}
-                handleDeleteTransaction={handleDeleteTransaction}
-                handleDuplicateTransaction={handleDuplicateTransaction}
-                clearTransactionFilters={clearTransactionFilters}
-                filters={filters}
-                setFilters={setFilters}
-                loadingTransactions={loadingTransactions}
-                transactions={transactions}
-                budgetAmount={budgetAmount}
-                setBudgetAmount={setBudgetAmount}
-                handleBudgetSubmit={handleBudgetSubmit}
-                savingBudget={savingBudget}
-                monthlyBudgetLocked={monthlyBudgetLocked}
-                budgetTopUpAmount={budgetTopUpAmount}
-                setBudgetTopUpAmount={setBudgetTopUpAmount}
-                handleBudgetTopUp={handleBudgetTopUp}
-                recurringForm={recurringForm}
-                resetRecurringForm={resetRecurringForm}
-                handleRecurringSubmit={handleRecurringSubmit}
-                setRecurringForm={setRecurringForm}
-                savingRecurring={savingRecurring}
-                recurringTemplates={recurringTemplates}
-                handleUseRecurringTemplate={handleUseRecurringTemplate}
-                handleEditRecurring={handleEditRecurring}
-                handleDeleteRecurring={handleDeleteRecurring}
-              />
-            }
-          />
-          <Route
-            path="reports"
-            element={
-              <ReportsView
-                monthLabel={monthLabel}
-                handleReportPdfExport={handleReportPdfExport}
-                handleReportPrint={handleReportPrint}
-                reports={reports}
-                trendMaxExpense={trendMaxExpense}
-                reportComparisons={reportComparisons}
-                transactions={transactions}
-                recurringTotal={recurringTotal}
-              />
-            }
-          />
-          <Route
-            path="settings"
-            element={
-              <SettingsView
-                handleProfileSubmit={handleProfileSubmit}
-                profileForm={profileForm}
-                setProfileForm={setProfileForm}
-                savingProfile={savingProfile}
-                handlePreferencesSubmit={handlePreferencesSubmit}
-                preferencesForm={preferencesForm}
-                setPreferencesForm={setPreferencesForm}
-                savingPreferences={savingPreferences}
-                handlePasswordSubmit={handlePasswordSubmit}
-                passwordForm={passwordForm}
-                setPasswordForm={setPasswordForm}
-                savingPassword={savingPassword}
-                settingsData={settingsData}
-                lastExportedAt={lastExportedAt}
-                formatDateTime={formatDateTime}
-                handleExportData={handleExportData}
-                handleExportCsv={handleExportCsv}
-                handleClearData={handleClearData}
-              />
-            }
-          />
-          {/* Redirect to main dashboard if unknown subpath */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </div>
-
-      {showMobilePrimaryAction ? (
-        <button
-          className="mobile-primary-action"
-          type="button"
-          onClick={() => handleStartNewTransaction()}
-          aria-label="New transaction"
-        >
-          <Plus size={24} />
-        </button>
-      ) : null}
-
-      <nav className="mobile-bottom-nav" aria-label="Primary navigation">
-        {TABS.map((tab) => (
-          <NavLink
-            key={tab.id}
-            to={tab.id === "dashboard" ? "/dashboard" : `/dashboard/${tab.id}`}
-            end={tab.id === "dashboard"}
-            className={({ isActive }) => `mobile-nav-item ${isActive ? "active" : ""}`}
-            aria-label={tab.label}
-          >
-            <tab.icon size={19} />
-            <span>{tab.label}</span>
-          </NavLink>
-        ))}
-      </nav>
+      </main>
 
       {flash ? (
         <div className={`flash flash-${flash.type}`} role="status">
@@ -1435,6 +1346,7 @@ export function Dashboard() {
         onCancel={closeConfirmDialog}
         onConfirm={handleConfirmDialog}
       />
-    </main>
+    </div>
   );
 }
+

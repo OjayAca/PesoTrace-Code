@@ -167,7 +167,7 @@ export function AuthScreen() {
         <form className="auth-form" onSubmit={handleForgotSubmit}>
           <label>
             <div className="field-label">
-              <span>Email</span>
+              <span>Email Address</span>
               <small>Use the email on your account.</small>
             </div>
             <input
@@ -185,17 +185,19 @@ export function AuthScreen() {
           {resetError ? <p className="form-error" role="alert">{resetError}</p> : null}
           {resetMessage ? <p className="form-success">{resetMessage}</p> : null}
 
-          <button className="primary-button" type="submit" disabled={resetSubmitting}>
-            {resetSubmitting ? "Sending..." : "Send reset link"}
+          <button className="primary-button large-button" type="submit" disabled={resetSubmitting}>
+            {resetSubmitting ? "Sending..." : "Send Reset Link"}
           </button>
         </form>
 
-        <p className="auth-switch">
-          Remembered it?
-          <button type="button" className="text-button" onClick={switchToLogin}>
-            Sign in
-          </button>
-        </p>
+        <div className="auth-footer">
+          <p className="auth-switch">
+            Remembered it?
+            <button type="button" className="text-button" onClick={switchToLogin}>
+              Sign in
+            </button>
+          </p>
+        </div>
       </section>
     );
   }
@@ -223,6 +225,7 @@ export function AuthScreen() {
               onChange={(event) =>
                 setResetForm((current) => ({ ...current, password: event.target.value }))
               }
+              placeholder="••••••••"
               autoComplete="new-password"
               required
             />
@@ -241,6 +244,7 @@ export function AuthScreen() {
                   confirmPassword: event.target.value,
                 }))
               }
+              placeholder="••••••••"
               autoComplete="new-password"
               required
             />
@@ -249,8 +253,8 @@ export function AuthScreen() {
           {resetError ? <p className="form-error" role="alert">{resetError}</p> : null}
           {resetMessage ? <p className="form-success">{resetMessage}</p> : null}
 
-          <button className="primary-button" type="submit" disabled={resetSubmitting || !routeToken}>
-            {resetSubmitting ? "Saving..." : "Update password"}
+          <button className="primary-button large-button" type="submit" disabled={resetSubmitting || !routeToken}>
+            {resetSubmitting ? "Saving..." : "Update Password"}
           </button>
         </form>
       </section>
@@ -258,7 +262,7 @@ export function AuthScreen() {
   }
 
   return (
-    <main className="app-shell auth-shell">
+    <main className="auth-shell">
       <AuthHero />
 
       {screen === "forgot" ? renderForgotPassword() : null}

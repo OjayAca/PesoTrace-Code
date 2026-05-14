@@ -133,7 +133,7 @@ export function TransactionsView({
               </label>
             </div>
 
-            <div className="form-row">
+            <div className="sidebar-grid">
               <label>
                 <div className="field-label">
                   <span>Amount</span>
@@ -342,20 +342,20 @@ export function TransactionsView({
           </div>
 
           {loadingTransactions ? (
-            <div className="empty-state">
-              <h3>Loading transactions...</h3>
+            <div className="empty-state animate-fade-in">
+              <h3 className="text-secondary">Loading transactions...</h3>
             </div>
           ) : transactions.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <Inbox size={22} />
+            <div className="empty-state animate-fade-in">
+              <div className="empty-state-icon" style={{ opacity: 0.2, marginBottom: '1rem' }}>
+                <Inbox size={48} />
               </div>
-              <h3>No matching transactions.</h3>
-              <p>Try adjusting the filters or add your first entry for this month.</p>
+              <h3 className="text-secondary">No matching transactions.</h3>
+              <p className="text-muted">Try adjusting the filters or add your first entry for this month.</p>
             </div>
           ) : (
             <>
-              <div className="table-wrap desktop-history">
+              <div className="table-wrap desktop-history animate-scale-in">
                 <table className="transaction-table">
                   <thead>
                     <tr>
@@ -365,24 +365,32 @@ export function TransactionsView({
                       <th>Category</th>
                       <th>Notes</th>
                       <th>Amount</th>
-                      <th>Actions</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {transactions.map((transaction) => (
                       <tr key={transaction.id}>
-                        <td>{formatDate(transaction.transactionDate)}</td>
+                        <td className="mono" style={{ fontSize: '0.8rem' }}>{formatDate(transaction.transactionDate)}</td>
                         <td>
                           <div className="transaction-primary">
-                            <strong>{transaction.title}</strong>
+                            <strong style={{ fontWeight: 600 }}>{transaction.title}</strong>
                             {transaction.isRecurring ? (
-                              <span className="mini-badge">Recurring</span>
+                              <span className="mini-badge" style={{ marginLeft: '0.5rem' }}>Recurring</span>
                             ) : null}
                           </div>
                         </td>
-                        <td>{transaction.type}</td>
-                        <td>{transaction.category}</td>
-                        <td className="notes-cell">{transaction.notes || "-"}</td>
+                        <td>
+                          <span className={`text-button`} style={{ textDecoration: 'none', cursor: 'default', fontSize: '0.75rem', textTransform: 'capitalize' }}>
+                            {transaction.type}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="text-muted" style={{ fontSize: '0.8rem' }}>{transaction.category}</span>
+                        </td>
+                        <td className="notes-cell text-muted" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {transaction.notes || "—"}
+                        </td>
                         <td
                           className={
                             transaction.type === "income"
@@ -393,39 +401,41 @@ export function TransactionsView({
                           {transaction.type === "income" ? "+" : "-"}
                           {formatCurrency(transaction.amount)}
                         </td>
-                        <td className="action-cell">
-                          <button
-                            className="icon-btn"
-                            type="button"
-                            onClick={() => handleDuplicateTransaction(transaction)}
-                            title="Duplicate"
-                            aria-label={`Duplicate ${transaction.title}`}
-                          >
-                            <Copy size={14} />
-                          </button>
-                          <button
-                            className="icon-btn"
-                            type="button"
-                            onClick={() => handleEditTransaction(transaction)}
-                            title={transaction.isRecurring ? "Managed in recurring templates" : "Edit"}
-                            aria-label={
-                              transaction.isRecurring
-                                ? "Recurring entries are managed in recurring templates"
-                                : `Edit ${transaction.title}`
-                            }
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            className="icon-btn danger"
-                            type="button"
-                            onClick={() => handleDeleteTransaction(transaction.id)}
-                            title="Delete"
-                            disabled={transaction.isRecurring}
-                            aria-label={`Delete ${transaction.title}`}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                        <td className="action-cell" style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                            <button
+                              className="icon-btn"
+                              type="button"
+                              onClick={() => handleDuplicateTransaction(transaction)}
+                              title="Duplicate"
+                              aria-label={`Duplicate ${transaction.title}`}
+                            >
+                              <Copy size={14} />
+                            </button>
+                            <button
+                              className="icon-btn"
+                              type="button"
+                              onClick={() => handleEditTransaction(transaction)}
+                              title={transaction.isRecurring ? "Managed in recurring templates" : "Edit"}
+                              aria-label={
+                                transaction.isRecurring
+                                  ? "Recurring entries are managed in recurring templates"
+                                  : `Edit ${transaction.title}`
+                              }
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              className="icon-btn danger"
+                              type="button"
+                              onClick={() => handleDeleteTransaction(transaction.id)}
+                              title="Delete"
+                              disabled={transaction.isRecurring}
+                              aria-label={`Delete ${transaction.title}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -636,11 +646,11 @@ export function TransactionsView({
               </label>
             </div>
 
-            <div className="form-row">
+            <div className="sidebar-grid">
               <label>
                 <div className="field-label">
                   <span>Amount</span>
-                  <small>Peso amount every month.</small>
+                  <small>Monthly amount.</small>
                 </div>
                 <input
                   type="number"
@@ -660,7 +670,7 @@ export function TransactionsView({
               <label>
                 <div className="field-label">
                   <span>Start date</span>
-                  <small>First month this applies.</small>
+                  <small>First month.</small>
                 </div>
                 <input
                   type="date"
@@ -677,7 +687,7 @@ export function TransactionsView({
               <label>
                 <div className="field-label">
                   <span>End date</span>
-                  <small>Optional final month this applies.</small>
+                  <small>Optional final month.</small>
                 </div>
                 <input
                   type="date"

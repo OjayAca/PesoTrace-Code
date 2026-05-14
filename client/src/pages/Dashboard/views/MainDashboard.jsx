@@ -1,4 +1,19 @@
-import { CalendarDays, Hash, Clock, FileText, Inbox, Target, CheckCircle2, Plus, BarChart3, AlertCircle, Search, Pencil, Copy } from "lucide-react";
+import React from "react";
+import { 
+  CalendarDays, 
+  Clock, 
+  FileText, 
+  Inbox, 
+  Plus, 
+  BarChart3, 
+  AlertCircle, 
+  Search, 
+  Pencil, 
+  TrendingUp,
+  ArrowRight,
+  Zap,
+  Activity
+} from "lucide-react";
 import { getFirstName, formatCurrency, formatDate } from "../../../utils/formatters";
 
 export function MainDashboard({
@@ -11,7 +26,6 @@ export function MainDashboard({
   budgetCardHeadline,
   budgetCardCopy,
   progress,
-  budgetPaceCopy,
   metricCards,
   latestTransactions,
   dashboardSearch,
@@ -19,298 +33,182 @@ export function MainDashboard({
   dashboardSearchResults,
   loadingDashboardSearch,
   handleEditTransaction,
-  handleDuplicateTransaction,
   budgetAlert,
   setActiveView,
+  handleStartNewTransaction,
   averageExpense,
-  onboardingComplete,
-  checklistDismissed,
-  dismissOnboardingChecklist,
-  onboardingChecklist,
-  onboardingProgress,
-  handleStartNewTransaction
+  budgetPaceCopy
 }) {
   const StatusIcon = statusMeta.icon;
 
   return (
-    <>
-      <section className="summary-hero panel panel-hero">
-        <div className="summary-copy">
-          <p className="eyebrow">
-            <CalendarDays size={14} /> Monthly finance workspace
-          </p>
-          <h1>Welcome back, {getFirstName(user.name)}.</h1>
-          <p className="summary-text">
-            Review your budget, income, expenses, and recurring activity for{" "}
-            {monthLabel} in one place.
-          </p>
-
+    <div className="bento-grid">
+      {/* ─── Hero Section ─── */}
+      <section className="bento-card span-8 row-2 summary-bento-hero animate-fade-up">
+        <div className="hero-content">
+          <p className="hero-eyebrow"><CalendarDays size={14} /> Workspace</p>
+          <h1>Hello, {getFirstName(user.name)}</h1>
+          <p>You have {dashboard?.transactionCount || 0} entries for {monthLabel}.</p>
+          
           <div className="summary-tags">
-            <span>
-              <Hash size={13} /> {dashboard?.transactionCount || 0} entries
-            </span>
-            <span>
-              <Clock size={13} />{" "}
-              {transactionInsights.latestTransactionDate
-                ? `Latest: ${formatDate(transactionInsights.latestTransactionDate)}`
-                : "No recent entries"}
-            </span>
-            <span>
-              <StatusIcon size={13} /> {statusMeta.label}
-            </span>
+            <div className="summary-tag-item">
+              <Clock size={16} opacity={0.7} />
+              <span>
+                {transactionInsights.latestTransactionDate
+                  ? `Last entry: ${formatDate(transactionInsights.latestTransactionDate)}`
+                  : "No recent activity"}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="hero-visual">
+          <BarChart3 size={120} opacity={0.1} />
+        </div>
+      </section>
+
+      {/* ─── Budget Card ─── */}
+      <section className={`bento-card span-4 row-2 bento-budget-card ${statusMeta.tone} animate-fade-up`} style={{ animationDelay: '0.1s' }}>
+        <div className="status-pill">
+          <StatusIcon size={14} /> {statusMeta.label}
+        </div>
+        <p className="metric-label">{budgetCardLabel}</p>
+        <h2 className="mono">{budgetCardHeadline}</h2>
+        <p className="metric-detail">{budgetCardCopy}</p>
+        
+        <div className="progress-bar-container">
+          <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="progress-caption">{statusMeta.description}</p>
+      </section>
+
+      {/* ─── Metric Cards ─── */}
+      {metricCards.map((card, index) => (
+        <article className="bento-card span-3 bento-stat-card animate-fade-up" key={card.label} style={{ animationDelay: `${0.15 + index * 0.05}s` }}>
+          <div className="metric-icon">
+            <card.icon size={24} />
+          </div>
+          <p className="metric-label">{card.label}</p>
+          <h3 className="mono">{card.value}</h3>
+          <p className="metric-detail">{card.detail}</p>
+        </article>
+      ))}
+
+      {/* ─── Insights Section ─── */}
+      <section className="bento-card span-4 row-2 animate-fade-up" style={{ animationDelay: '0.3s' }}>
+        <p className="eyebrow"><Zap size={12} /> Insights</p>
+        <div className="insight-content">
+          <p className="metric-label">Average Expense</p>
+          <h3 className="mono">{averageExpense ? formatCurrency(averageExpense) : "N/A"}</h3>
+          <p className="metric-detail">
+            <Activity size={14} />
+            {budgetPaceCopy}
+          </p>
+        </div>
+      </section>
+
+      {/* ─── Recent Activity ─── */}
+      <section className="bento-card span-8 row-4 animate-fade-up" style={{ animationDelay: '0.35s' }}>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow"><FileText size={12} /> Timeline</p>
+            <h3>Recent Activity</h3>
+          </div>
+          <button 
+            className="secondary-button compact-button"
+            onClick={() => setActiveView("transactions")}
+          >
+            View All <ArrowRight size={14} />
+          </button>
+        </div>
+
+        {latestTransactions.length === 0 ? (
+          <div className="empty-state animate-fade-in">
+            <Inbox size={32} opacity={0.2} />
+            <p>No transactions yet. Add your first entry to see insights.</p>
+          </div>
+        ) : (
+          <div className="bento-list">
+            {latestTransactions.map((t) => (
+              <div className="bento-list-item" key={t.id}>
+                <div className="item-info">
+                  <div className="item-title">{t.title}</div>
+                  <div className="item-meta">{formatDate(t.transactionDate)} • {t.category}</div>
+                </div>
+                <span className={`item-amount amount ${t.type === 'income' ? 'amount-positive' : 'amount-negative'}`}>
+                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ─── Search & Quick Actions ─── */}
+      <section className="bento-card span-4 row-4">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow"><Search size={12} /> Explorer</p>
+            <h3>Quick Search</h3>
           </div>
         </div>
 
-        <article className={`summary-card ${statusMeta.tone}`}>
-          <div className="status-pill">
-            <StatusIcon size={13} /> {statusMeta.label}
+        <div className="search-input-group">
+          <Search size={16} />
+          <input 
+            type="text" 
+            placeholder="Search entries..." 
+            value={dashboardSearch}
+            onChange={(e) => setDashboardSearch(e.target.value)}
+          />
+        </div>
+
+        {dashboardSearch.trim().length >= 2 && (
+          <div className="bento-list search-results">
+            {loadingDashboardSearch ? (
+              <p className="metric-detail">Searching...</p>
+            ) : dashboardSearchResults.length === 0 ? (
+              <p className="metric-detail">No results found</p>
+            ) : (
+              dashboardSearchResults.map((t) => (
+                <div className="bento-list-item compact" key={t.id}>
+                  <div className="item-info">
+                    <span className="item-title">{t.title}</span>
+                    <span className="item-meta">{formatDate(t.transactionDate)}</span>
+                  </div>
+                  <div className="item-actions">
+                    <span className={`item-amount amount ${t.type === 'income' ? 'amount-positive' : 'amount-negative'}`}>
+                      {formatCurrency(t.amount)}
+                    </span>
+                    <button className="icon-btn" onClick={() => handleEditTransaction(t)}><Pencil size={12}/></button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <p className="summary-card-label">{budgetCardLabel}</p>
-          <h2>{budgetCardHeadline}</h2>
-          <p className="summary-card-copy">{budgetCardCopy}</p>
-          <div className="progress-track" aria-hidden="true">
-            <span style={{ width: `${progress}%` }} />
-          </div>
-          <p className="progress-caption">{statusMeta.description}</p>
-          <p className="progress-caption">{budgetPaceCopy}</p>
-        </article>
+        )}
+
+        <div className="quick-actions">
+          <button 
+            className="primary-button full-width" 
+            onClick={() => handleStartNewTransaction()}
+          >
+            <Plus size={18} /> New Transaction
+          </button>
+        </div>
       </section>
 
-      {budgetAlert ? (
-        <section className={`budget-alert budget-alert-${budgetAlert.tone}`} role="status">
-          <AlertCircle size={18} />
-          <div>
-            <strong>{budgetAlert.title}</strong>
-            <p>{budgetAlert.message}</p>
+      {/* ─── Budget Alerts ─── */}
+      {budgetAlert && (
+        <section className={`bento-card span-12 budget-alert budget-alert-${budgetAlert.tone}`}>
+          <div className="alert-content">
+            <AlertCircle size={24} />
+            <div>
+              <strong>{budgetAlert.title}</strong>
+              <p>{budgetAlert.message}</p>
+            </div>
           </div>
         </section>
-      ) : null}
-
-      <section className="metric-grid">
-        {metricCards.map((card) => (
-          <article className="panel metric-card" key={card.label}>
-            <div>
-              <div className="metric-icon">
-                <card.icon size={18} />
-              </div>
-              <p className="metric-label">{card.label}</p>
-              <h3>{card.value}</h3>
-            </div>
-            <p className="metric-detail">{card.detail}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="content-grid">
-        <article className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">
-                <FileText size={12} /> Latest entries
-              </p>
-              <h2>Recent activity</h2>
-            </div>
-            <button
-              className="secondary-button compact-button"
-              type="button"
-              onClick={() => setActiveView("transactions")}
-            >
-              Open transactions
-            </button>
-          </div>
-
-          {latestTransactions.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <Inbox size={22} />
-              </div>
-              <h3>No entries yet.</h3>
-              <p>Add a transaction or recurring template to start building your summary.</p>
-            </div>
-          ) : (
-            <div className="list-stack">
-              {latestTransactions.map((transaction) => (
-                <div className="list-row" key={transaction.id}>
-                  <div>
-                    <strong>{transaction.title}</strong>
-                    <p>
-                      {formatDate(transaction.transactionDate)} - {transaction.category} -{" "}
-                      {transaction.type}
-                      {transaction.isRecurring ? " - recurring" : ""}
-                    </p>
-                  </div>
-                  <strong
-                    className={
-                      transaction.type === "income" ? "amount-positive" : "amount-negative"
-                    }
-                  >
-                    {transaction.type === "income" ? "+" : "-"}
-                    {formatCurrency(transaction.amount)}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-
-        <article className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">
-                <Search size={12} /> Find entries
-              </p>
-              <h2>Transaction search</h2>
-            </div>
-          </div>
-
-          <label className="dashboard-search-field">
-            <span>Search all saved transactions</span>
-            <div className="input-with-icon">
-              <Search size={15} />
-              <input
-                type="search"
-                value={dashboardSearch}
-                onChange={(event) => setDashboardSearch(event.target.value)}
-                placeholder="Title, note, category"
-              />
-            </div>
-          </label>
-
-          {dashboardSearch.trim().length < 2 ? (
-            <p className="section-caption dashboard-search-caption">
-              Enter at least 2 characters to search your transaction history.
-            </p>
-          ) : loadingDashboardSearch ? (
-            <div className="empty-inline">Searching transactions...</div>
-          ) : dashboardSearchResults.length === 0 ? (
-            <div className="empty-inline">No matching transactions found.</div>
-          ) : (
-            <div className="list-stack dashboard-search-results">
-              {dashboardSearchResults.map((transaction) => (
-                <div className="list-row list-row-compact" key={transaction.id}>
-                  <div>
-                    <strong>{transaction.title}</strong>
-                    <p>
-                      {formatDate(transaction.transactionDate)} - {transaction.category} -{" "}
-                      {transaction.type}
-                    </p>
-                  </div>
-                  <div className="row-actions">
-                    <strong
-                      className={
-                        transaction.type === "income" ? "amount-positive" : "amount-negative"
-                      }
-                    >
-                      {transaction.type === "income" ? "+" : "-"}
-                      {formatCurrency(transaction.amount)}
-                    </strong>
-                    <button
-                      className="icon-btn"
-                      type="button"
-                      onClick={() => handleDuplicateTransaction(transaction)}
-                      title="Duplicate"
-                      aria-label={`Duplicate ${transaction.title}`}
-                    >
-                      <Copy size={14} />
-                    </button>
-                    <button
-                      className="icon-btn"
-                      type="button"
-                      onClick={() => handleEditTransaction(transaction)}
-                      title="Edit"
-                      aria-label={`Edit ${transaction.title}`}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-
-        <article className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">
-                <BarChart3 size={12} /> Quick signals
-              </p>
-              <h2>At a glance</h2>
-            </div>
-          </div>
-          <div className="insight-list">
-            <div className="insight-item">
-              <span>Largest expense</span>
-              <strong>
-                {transactionInsights.largestExpense === null
-                  ? "No data yet"
-                  : formatCurrency(transactionInsights.largestExpense)}
-              </strong>
-            </div>
-            <div className="insight-item">
-              <span>Income entries</span>
-              <strong>{transactionInsights.incomeCount}</strong>
-            </div>
-            <div className="insight-item">
-              <span>Recurring entries this month</span>
-              <strong>{transactionInsights.recurringCount}</strong>
-            </div>
-            <div className="insight-item">
-              <span>Average expense</span>
-              <strong>
-                {averageExpense === null ? "No data yet" : formatCurrency(averageExpense)}
-              </strong>
-            </div>
-          </div>
-        </article>
-
-        {!onboardingComplete && !checklistDismissed ? (
-          <article className="panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">
-                  <Target size={12} /> Getting started
-                </p>
-                <h2>Finish the setup</h2>
-              </div>
-              <button
-                className="secondary-button compact-button"
-                type="button"
-                onClick={dismissOnboardingChecklist}
-              >
-                Hide
-              </button>
-            </div>
-
-            <div className="insight-list onboarding-list">
-              {onboardingChecklist.map((item) => (
-                <div className="insight-item" key={item.id}>
-                  <span className="check-item-copy">
-                    <CheckCircle2 size={14} className={item.complete ? "check-item-complete" : ""} />
-                    {item.label}
-                  </span>
-                  <strong>{item.complete ? "Done" : "Next"}</strong>
-                </div>
-              ))}
-            </div>
-            <p className="section-caption">
-              Progress {onboardingProgress}/{onboardingChecklist.length} complete.
-            </p>
-
-            <div className="button-row">
-              <button className="primary-button" type="button" onClick={handleStartNewTransaction}>
-                <Plus size={16} /> New transaction
-              </button>
-              <button className="secondary-button" type="button" onClick={() => setActiveView("reports")}>
-                Open reports
-              </button>
-            </div>
-            <p className="section-caption">
-              Shortcuts: Ctrl+Alt+N new transaction, Ctrl+Alt+R reports, Ctrl+Alt+S settings.
-            </p>
-          </article>
-        ) : null}
-      </section>
-    </>
+      )}
+    </div>
   );
 }

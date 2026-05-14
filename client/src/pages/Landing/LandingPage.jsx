@@ -14,6 +14,7 @@ import {
   Sun,
   Utensils,
   Wallet,
+  Zap,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 
@@ -196,14 +197,14 @@ export function LandingPage() {
 
       <section className="landing-hero">
         <div className="landing-hero-copy">
-          <p className="eyebrow">
-            <Wallet size={14} /> Student finance tracker
+          <p className="hero-eyebrow">
+            <Zap size={14} className="text-accent" /> Professional Finance Tracking
           </p>
-          <h1>Track every peso before the month runs away.</h1>
-          <p className="landing-lede">
+          <h1 className="hero-title">Track every peso with clearer monthly control.</h1>
+          <p className="landing-lede text-accent-light">
             PesoTrace helps students and beginners manage monthly budgets,
             allowance or income, everyday expenses, recurring entries, and
-            readable reports without connecting a bank account.
+            readable reports in a professional, focused workspace.
           </p>
 
           <div className="landing-actions">
@@ -217,7 +218,7 @@ export function LandingPage() {
 
           <div className="landing-tags" aria-label="PesoTrace benefits">
             <span>
-              <ShieldCheck size={13} /> No bank connection
+              <ShieldCheck size={13} /> Secure workspace
             </span>
             <span>
               <Wallet size={13} /> Private account

@@ -21,21 +21,20 @@ export function SettingsView({
   handleClearData
 }) {
   return (
-    <section className="content-grid settings-grid">
-      <article className="panel">
+    <div className="bento-grid animate-fade-in">
+      <article className="bento-card span-6 animate-fade-up">
         <div className="section-heading">
           <div>
             <p className="eyebrow">
-              <User size={12} /> Profile
+              <User size={12} /> Personal
             </p>
-            <h2>Account details</h2>
+            <h3>Account Profile</h3>
           </div>
         </div>
         <form className="stack-form" onSubmit={handleProfileSubmit}>
           <label>
             <div className="field-label">
-              <span>Full name</span>
-              <small>Displayed in the dashboard.</small>
+              <span>Full Name</span>
             </div>
             <input
               type="text"
@@ -51,8 +50,7 @@ export function SettingsView({
           </label>
           <label>
             <div className="field-label">
-              <span>Email</span>
-              <small>Used for login.</small>
+              <span>Email Address</span>
             </div>
             <input
               type="email"
@@ -67,25 +65,25 @@ export function SettingsView({
             />
           </label>
           <button className="primary-button" type="submit" disabled={savingProfile}>
-            {savingProfile ? "Saving..." : "Save profile"}
+            {savingProfile ? "Saving..." : "Save Profile"}
           </button>
         </form>
       </article>
 
-      <article className="panel">
+      <article className="bento-card span-6 animate-fade-up" style={{ animationDelay: '0.1s' }}>
         <div className="section-heading">
           <div>
             <p className="eyebrow">
-              <Settings size={12} /> Preferences
+              <Settings size={12} /> Appearance
             </p>
-            <h2>Workspace preferences</h2>
+            <h3>Preferences</h3>
           </div>
         </div>
         <form className="stack-form" onSubmit={handlePreferencesSubmit}>
           <label>
             <div className="field-label">
-              <span>Preferred theme</span>
-              <small>Applied across the app.</small>
+              <span>Preferred Theme</span>
+              <small>Choose between Light and Dark mode for your workspace.</small>
             </div>
             <select
               value={preferencesForm.preferredTheme}
@@ -96,8 +94,8 @@ export function SettingsView({
                 }))
               }
             >
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="light">Light Mode</option>
+              <option value="dark">Dark Mode</option>
             </select>
           </label>
           <button
@@ -105,24 +103,24 @@ export function SettingsView({
             type="submit"
             disabled={savingPreferences}
           >
-            {savingPreferences ? "Saving..." : "Save preferences"}
+            {savingPreferences ? "Saving..." : "Save Preferences"}
           </button>
         </form>
       </article>
 
-      <article className="panel">
+      <article className="bento-card span-6 animate-fade-up" style={{ animationDelay: '0.15s' }}>
         <div className="section-heading">
           <div>
             <p className="eyebrow">
-              <Lock size={12} /> Security
+              <Lock size={12} /> Safety
             </p>
-            <h2>Change password</h2>
+            <h3>Security</h3>
           </div>
         </div>
         <form className="stack-form" onSubmit={handlePasswordSubmit}>
           <label>
             <div className="field-label">
-              <span>Current password</span>
+              <span>Current Password</span>
             </div>
             <input
               type="password"
@@ -134,114 +132,111 @@ export function SettingsView({
                 }))
               }
               required
+              autoComplete="current-password"
             />
           </label>
-          <label>
-            <div className="field-label">
-              <span>New password</span>
-            </div>
-            <input
-              type="password"
-              minLength={6}
-              value={passwordForm.newPassword}
-              onChange={(event) =>
-                setPasswordForm((current) => ({
-                  ...current,
-                  newPassword: event.target.value,
-                }))
-              }
-              required
-            />
-          </label>
-          <label>
-            <div className="field-label">
-              <span>Confirm new password</span>
-            </div>
-            <input
-              type="password"
-              minLength={6}
-              value={passwordForm.confirmPassword}
-              onChange={(event) =>
-                setPasswordForm((current) => ({
-                  ...current,
-                  confirmPassword: event.target.value,
-                }))
-              }
-              required
-            />
-          </label>
+          <div className="form-row">
+            <label>
+              <div className="field-label">
+                <span>New Password</span>
+              </div>
+              <input
+                type="password"
+                minLength={6}
+                value={passwordForm.newPassword}
+                onChange={(event) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    newPassword: event.target.value,
+                  }))
+                }
+                required
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              <div className="field-label">
+                <span>Confirm</span>
+              </div>
+              <input
+                type="password"
+                minLength={6}
+                value={passwordForm.confirmPassword}
+                onChange={(event) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    confirmPassword: event.target.value,
+                  }))
+                }
+                required
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
           <button className="primary-button" type="submit" disabled={savingPassword}>
-            {savingPassword ? "Saving..." : "Update password"}
+            {savingPassword ? "Updating..." : "Update Password"}
           </button>
         </form>
       </article>
 
-      <article className="panel">
+      <article className="bento-card span-6 animate-fade-up" style={{ animationDelay: '0.2s' }}>
         <div className="section-heading">
           <div>
             <p className="eyebrow">
-              <Download size={12} /> Data tools
+              <Download size={12} /> Maintenance
             </p>
-            <h2>Export and reset</h2>
+            <h3>Data Management</h3>
           </div>
         </div>
 
-        <div className="list-stack">
-          <div className="list-row list-row-compact">
-            <div>
-              <strong>Tracked transactions</strong>
-              <p>{settingsData?.stats?.transactionCount || 0} saved entries</p>
+        <div className="bento-list">
+          <div className="bento-list-item animate-scale-in" style={{ animationDelay: '0.3s' }}>
+            <div className="item-info">
+              <span className="item-title">Total Transactions</span>
+              <span className="item-meta">Recorded since account creation</span>
             </div>
-            <strong>{settingsData?.stats?.transactionCount || 0}</strong>
+            <strong className="mono">{settingsData?.stats?.transactionCount || 0}</strong>
           </div>
-          <div className="list-row list-row-compact">
-            <div>
-              <strong>Monthly budgets</strong>
-              <p>{settingsData?.stats?.budgetCount || 0} configured months</p>
+          <div className="bento-list-item animate-scale-in" style={{ animationDelay: '0.35s' }}>
+            <div className="item-info">
+              <span className="item-title">Monthly Budgets</span>
+              <span className="item-meta">Historical budget configurations</span>
             </div>
-            <strong>{settingsData?.stats?.budgetCount || 0}</strong>
-          </div>
-          <div className="list-row list-row-compact">
-            <div>
-              <strong>Recurring templates</strong>
-              <p>{settingsData?.stats?.recurringCount || 0} active templates</p>
-            </div>
-            <strong>{settingsData?.stats?.recurringCount || 0}</strong>
+            <strong className="mono">{settingsData?.stats?.budgetCount || 0}</strong>
           </div>
         </div>
 
-        <p className="section-caption">
-          Last exported at: {formatDateTime(lastExportedAt)}
+        <p className="metric-detail" style={{ marginTop: '1.25rem', fontSize: '0.75rem', opacity: 0.7 }}>
+          Last exported: {formatDateTime(lastExportedAt)}
         </p>
 
-        <div className="button-row">
+        <div className="button-row" style={{ marginTop: '1rem' }}>
           <button
-            className="secondary-button"
+            className="secondary-button compact-button"
             type="button"
             onClick={handleExportData}
+            title="Export as JSON"
           >
             Export JSON
           </button>
           <button
-            className="secondary-button"
+            className="secondary-button compact-button"
             type="button"
             onClick={handleExportCsv}
+            title="Export as CSV"
           >
             Export CSV
           </button>
           <button
-            className="danger-button"
+            className="danger-button compact-button"
             type="button"
             onClick={handleClearData}
+            style={{ marginLeft: 'auto' }}
           >
-            Clear all data
+            Clear Data
           </button>
         </div>
-        <p className="section-caption section-danger-caption">
-          <AlertCircle size={13} /> Clearing data will remove all transactions, budgets,
-          and templates from your account. This cannot be undone.
-        </p>
       </article>
-    </section>
+    </div>
   );
 }

@@ -14,15 +14,16 @@ export function RegisterScreen({
     <section className="panel auth-panel auth-panel-register">
       <div className="auth-panel-top">
         <div>
-          <p className="eyebrow">Create account</p>
-          <h2>Register for PesoTrace</h2>
+          <p className="eyebrow">Get Started</p>
+          <h2>Create your account</h2>
           <p className="auth-helper">
-            Set up your workspace and start tracking your finances in one place.
+            Start tracking your finances with PesoTrace.
           </p>
         </div>
 
         <button
-          className="theme-toggle"
+          className="sidebar-action-btn"
+          style={{ width: '40px', height: '40px' }}
           type="button"
           onClick={() => setTheme(theme === "light" ? "dark" : "light")}
           aria-label="Toggle theme"
@@ -34,8 +35,7 @@ export function RegisterScreen({
       <form className="auth-form" onSubmit={onSubmit}>
         <label>
           <div className="field-label">
-            <span>Full name</span>
-            <small>Shown across your workspace.</small>
+            <span>Full Name</span>
           </div>
           <input
             type="text"
@@ -51,8 +51,7 @@ export function RegisterScreen({
 
         <label>
           <div className="field-label">
-            <span>Email</span>
-            <small>Used for sign in.</small>
+            <span>Email Address</span>
           </div>
           <input
             type="email"
@@ -66,62 +65,64 @@ export function RegisterScreen({
           />
         </label>
 
-        <label>
-          <div className="field-label">
-            <span>Password</span>
-            <small>Minimum of 6 characters.</small>
-          </div>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, password: event.target.value }))
-            }
-            minLength={6}
-            placeholder="At least 6 characters"
-            autoComplete="new-password"
-            required
-          />
-        </label>
+        <div className="form-row">
+          <label>
+            <div className="field-label">
+              <span>Password</span>
+            </div>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, password: event.target.value }))
+              }
+              minLength={6}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              required
+            />
+          </label>
 
-        <label>
-          <div className="field-label">
-            <span>Confirm password</span>
-            <small>Must match your password.</small>
-          </div>
-          <input
-            type="password"
-            value={form.confirmPassword}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                confirmPassword: event.target.value,
-              }))
-            }
-            minLength={6}
-            placeholder="Re-enter your password"
-            autoComplete="new-password"
-            required
-          />
-        </label>
+          <label>
+            <div className="field-label">
+              <span>Confirm</span>
+            </div>
+            <input
+              type="password"
+              value={form.confirmPassword}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  confirmPassword: event.target.value,
+                }))
+              }
+              minLength={6}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              required
+            />
+          </label>
+        </div>
 
         {error ? (
           <p className="form-error" role="alert">
-            <AlertCircle size={15} /> {error}
+            <AlertCircle size={16} /> {error}
           </p>
         ) : null}
 
-        <button className="primary-button" type="submit" disabled={submitting}>
-          {submitting ? "Please wait..." : "Create account"}
+        <button className="primary-button large-button" type="submit" disabled={submitting}>
+          {submitting ? "Creating account..." : "Create Account"}
         </button>
       </form>
 
-      <p className="auth-switch">
-        Already have an account?
-        <button type="button" className="text-button" onClick={onSwitch}>
-          Sign in
-        </button>
-      </p>
+      <div className="auth-footer">
+        <p className="auth-switch">
+          Already have an account?
+          <button type="button" className="text-button" onClick={onSwitch}>
+            Sign in
+          </button>
+        </p>
+      </div>
     </section>
   );
 }

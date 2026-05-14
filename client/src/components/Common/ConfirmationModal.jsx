@@ -39,9 +39,9 @@ export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="confirm-modal-head">
-          <span className="confirm-modal-icon">
-            <Icon size={20} />
-          </span>
+          <div className="confirm-modal-icon">
+            <Icon size={24} />
+          </div>
           <button
             className="icon-btn"
             type="button"
@@ -49,7 +49,7 @@ export function ConfirmationModal({ dialog, submitting, onCancel, onConfirm }) {
             disabled={submitting}
             aria-label="Close confirmation modal"
           >
-            <X size={14} />
+            <X size={18} />
           </button>
         </div>
 

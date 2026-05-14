@@ -96,13 +96,26 @@ export function MainDashboard({
       {/* ─── Insights Section ─── */}
       <section className="bento-card span-4 row-2 animate-fade-up" style={{ animationDelay: '0.3s' }}>
         <p className="eyebrow"><Zap size={12} /> Insights</p>
-        <div className="insight-content">
-          <p className="metric-label">Average Expense</p>
-          <h3 className="mono">{averageExpense ? formatCurrency(averageExpense) : "N/A"}</h3>
-          <p className="metric-detail">
-            <Activity size={14} />
-            {budgetPaceCopy}
-          </p>
+        <div className="insight-content" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div>
+            <p className="metric-label">Average Expense</p>
+            <h3 className="mono">{averageExpense ? formatCurrency(averageExpense) : "N/A"}</h3>
+            <p className="metric-detail" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Activity size={14} />
+              {budgetPaceCopy}
+            </p>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+            <div>
+              <p className="metric-label">Largest Expense</p>
+              <h4 className="mono">{transactionInsights.largestExpense ? formatCurrency(transactionInsights.largestExpense) : "N/A"}</h4>
+            </div>
+            <div>
+              <p className="metric-label">Active Subs</p>
+              <h4 className="mono">{transactionInsights.recurringCount || 0}</h4>
+            </div>
+          </div>
         </div>
       </section>
 

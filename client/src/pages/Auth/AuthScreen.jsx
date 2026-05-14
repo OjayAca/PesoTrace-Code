@@ -176,7 +176,7 @@ export function AuthScreen() {
               onChange={(event) =>
                 setResetForm((current) => ({ ...current, email: event.target.value }))
               }
-              placeholder="you@example.com"
+              placeholder=""
               autoComplete="email"
               required
             />

@@ -38,7 +38,9 @@ async function sendWithResend(env, payload) {
   });
 
   if (!response.ok) {
-    throw new Error("Email delivery failed.");
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.message || "Email delivery failed.";
+    throw new Error(`Email delivery failed: ${message}`);
   }
 }
 
@@ -62,8 +64,15 @@ export function createEmailService(env = process.env) {
   const provider = ensureEmailConfig(env);
   const from = String(env.EMAIL_FROM || "").trim();
 
-  async function sendEmail({ to, subject, text, html }) {
+  async function sendEmail({ to, subject, text, html, metadata = {} }) {
     if (provider === "noop") {
+      if (metadata.resetUrl) {
+        console.log("-----------------------------------------");
+        console.log("DEBUG: Password Reset Link Generated");
+        console.log(`To: ${to}`);
+        console.log(`Link: ${metadata.resetUrl}`);
+        console.log("-----------------------------------------");
+      }
       return { skipped: true };
     }
 
@@ -93,6 +102,7 @@ export function createEmailService(env = process.env) {
         subject: "Reset your PesoTrace password",
         text: `Reset your PesoTrace password by opening this link: ${resetUrl}`,
         html: `<p>Reset your PesoTrace password by opening this link:</p><p><a href="${resetUrl}">Reset password</a></p>`,
+        metadata: { resetUrl },
       });
     },
   };

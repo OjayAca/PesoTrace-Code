@@ -45,7 +45,7 @@ export function LoginScreen({
             onChange={(event) =>
               setForm((current) => ({ ...current, email: event.target.value }))
             }
-            placeholder="you@example.com"
+            placeholder=""
             autoComplete="email"
             required
           />
@@ -54,9 +54,6 @@ export function LoginScreen({
         <label>
           <div className="field-label">
             <span>Password</span>
-            <button type="button" className="text-button" onClick={onForgotPassword}>
-              Forgot password?
-            </button>
           </div>
           <input
             type="password"
@@ -64,10 +61,13 @@ export function LoginScreen({
             onChange={(event) =>
               setForm((current) => ({ ...current, password: event.target.value }))
             }
-            placeholder="••••••••"
+            placeholder=""
             autoComplete="current-password"
             required
           />
+          <button type="button" className="text-button" onClick={onForgotPassword}>
+            Forgot password?
+          </button>
         </label>
 
         {error ? (

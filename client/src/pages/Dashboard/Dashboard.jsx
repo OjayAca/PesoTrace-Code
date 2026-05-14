@@ -425,20 +425,20 @@ export function Dashboard() {
         ? {
             tone: "positive",
             label: "On track",
-            description: `${formatCurrency(totalIncome)} income and ${formatCurrency(budgetValue)} budget still cover this month's expenses.`,
+            description: "Income and budget cover expenses.",
             icon: statusMeta.icon,
           }
         : budgetRemaining === 0
           ? {
               tone: "balanced",
               label: "Budget matched",
-              description: `${formatCurrency(totalIncome)} income and ${formatCurrency(budgetValue)} budget are fully used.`,
+              description: "Budget fully used.",
               icon: statusMeta.icon,
             }
           : {
               tone: "warning",
               label: "Over budget",
-              description: `${formatCurrency(Math.abs(budgetRemaining))} is still short after using your income and budget.`,
+              description: `Short by ${formatCurrency(Math.abs(budgetRemaining))}.`,
               icon: statusMeta.icon,
             };
   let progress = 0;
@@ -474,9 +474,9 @@ export function Dashboard() {
   const budgetCardCopy =
     budgetRemaining !== null
       ? isOverBudget
-        ? `${formatCurrency(totalIncome)} income and ${formatCurrency(totalExpenses)} expenses against ${formatCurrency(budgetValue)} budget still leave ${formatCurrency(Math.abs(budgetRemaining))} short for ${monthLabel}.`
-        : `${formatCurrency(totalIncome)} income and ${formatCurrency(totalExpenses)} expenses against ${formatCurrency(budgetValue)} budget leave ${formatCurrency(budgetRemaining)} for ${monthLabel}.`
-      : "Set a monthly budget for this month to track your allowance.";
+        ? `${formatCurrency(Math.abs(budgetRemaining))} short for ${monthLabel}.`
+        : `${formatCurrency(budgetRemaining)} left for ${monthLabel}.`
+      : "Set a budget to track allowance.";
   const selectedMonthDate = new Date(`${selectedMonth}-01T00:00:00`);
   const monthDays = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0).getDate();
   const currentMonthKey = getCurrentMonth();
@@ -489,10 +489,10 @@ export function Dashboard() {
   const budgetPaceDelta = budgetPace === null ? null : roundMoney(budgetPace - totalExpenses);
   const budgetPaceCopy =
     budgetPaceDelta === null
-      ? "Set a budget and log income to compare pace for this month."
+      ? "Set budget to track pace."
       : budgetPaceDelta >= 0
-        ? `${formatCurrency(budgetPaceDelta)} under the expected pace for ${monthLabel}.`
-        : `${formatCurrency(Math.abs(budgetPaceDelta))} over the expected pace for ${monthLabel}.`;
+        ? `${formatCurrency(budgetPaceDelta)} under pace.`
+        : `${formatCurrency(Math.abs(budgetPaceDelta))} over pace.`;
   const budgetUsagePercent =
     availableFunds && availableFunds > 0
       ? Math.round((totalExpenses / availableFunds) * 100)
@@ -1125,20 +1125,20 @@ export function Dashboard() {
       value: formatCurrency(dashboard?.budget),
       detail:
         dashboard?.budgetSource === "unset"
-          ? "No monthly budget saved yet."
-          : `Budget applied for ${monthLabel}.`,
+          ? "No budget set."
+          : `Active for ${monthLabel}.`,
     },
     {
       icon: TrendingDown,
       label: "Total expenses",
       value: formatCurrency(dashboard?.totalExpenses),
-      detail: "All expense entries for the selected month.",
+      detail: "Total spent.",
     },
     {
       icon: TrendingUp,
       label: "Total income",
       value: formatCurrency(dashboard?.totalIncome),
-      detail: "Allowance and other income logged this month.",
+      detail: "Total earned.",
     },
     {
       icon: PieChart,
@@ -1146,8 +1146,8 @@ export function Dashboard() {
       value: formatCurrency(dashboard?.netBalance),
       detail:
         dashboard?.netBalance >= 0
-          ? "Income still covers this month's expenses."
-          : "Expenses are higher than logged income.",
+          ? "In the green."
+          : "In the red.",
     },
   ];
 

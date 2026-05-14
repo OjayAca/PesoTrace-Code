@@ -162,7 +162,7 @@ export function requestPasswordReset(store, emailService) {
 
     const user = await store.getUserByEmail(email);
 
-    if (user && !isFuture(user.passwordResetExpiresAt)) {
+    if (user) {
       const token = createSecretToken();
       await store.setPasswordResetToken(
         user.id,

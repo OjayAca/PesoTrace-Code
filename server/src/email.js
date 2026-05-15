@@ -1,3 +1,5 @@
+import nodemailer from "nodemailer";
+
 function getAppBaseUrl(env = process.env) {
   const configured = String(env.APP_BASE_URL || "").trim();
 
@@ -44,17 +46,71 @@ async function sendWithResend(env, payload) {
   }
 }
 
+function getSmtpPort(env = process.env) {
+  const port = Number(env.SMTP_PORT || 587);
+
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("SMTP_PORT must be a valid TCP port.");
+  }
+
+  return port;
+}
+
+function getSmtpSecure(env = process.env, port = getSmtpPort(env)) {
+  const configured = String(env.SMTP_SECURE || "").trim().toLowerCase();
+
+  if (configured) {
+    return ["1", "true", "yes"].includes(configured);
+  }
+
+  return port === 465;
+}
+
+function getSmtpConfig(env = process.env) {
+  return {
+    host: String(env.SMTP_HOST || "").trim(),
+    port: getSmtpPort(env),
+    user: String(env.SMTP_USER || "").trim(),
+    pass: String(env.SMTP_PASS || "").trim(),
+  };
+}
+
+function assertSmtpConfig(env = process.env) {
+  const config = getSmtpConfig(env);
+  const missing = [];
+
+  if (!config.host) {
+    missing.push("SMTP_HOST");
+  }
+
+  if (!config.user) {
+    missing.push("SMTP_USER");
+  }
+
+  if (!config.pass) {
+    missing.push("SMTP_PASS");
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required when EMAIL_PROVIDER=smtp.`);
+  }
+}
+
 export function ensureEmailConfig(env = process.env) {
   const provider = String(env.EMAIL_PROVIDER || "").trim().toLowerCase();
   const hasResendConfig = Boolean(String(env.RESEND_API_KEY || "").trim());
-  const deliveryProvider = provider || (hasResendConfig ? "resend" : "noop");
+  const deliveryProvider = provider === "brevo" ? "smtp" : provider || (hasResendConfig ? "resend" : "noop");
 
   if (env.NODE_ENV === "production" && deliveryProvider === "noop") {
-    throw new Error("Email delivery is required in production. Set EMAIL_PROVIDER=resend and RESEND_API_KEY.");
+    throw new Error("Email delivery is required in production. Set EMAIL_PROVIDER=smtp or EMAIL_PROVIDER=resend.");
   }
 
-  if (deliveryProvider === "resend" && !String(env.EMAIL_FROM || "").trim()) {
-    throw new Error("EMAIL_FROM is required when EMAIL_PROVIDER=resend.");
+  if (["resend", "smtp"].includes(deliveryProvider) && !String(env.EMAIL_FROM || "").trim()) {
+    throw new Error(`EMAIL_FROM is required when EMAIL_PROVIDER=${deliveryProvider}.`);
+  }
+
+  if (deliveryProvider === "smtp") {
+    assertSmtpConfig(env);
   }
 
   return deliveryProvider;
@@ -63,6 +119,19 @@ export function ensureEmailConfig(env = process.env) {
 export function createEmailService(env = process.env) {
   const provider = ensureEmailConfig(env);
   const from = String(env.EMAIL_FROM || "").trim();
+  const smtpConfig = provider === "smtp" ? getSmtpConfig(env) : null;
+  const smtpTransporter =
+    provider === "smtp"
+      ? nodemailer.createTransport({
+          host: smtpConfig.host,
+          port: smtpConfig.port,
+          secure: getSmtpSecure(env, smtpConfig.port),
+          auth: {
+            user: smtpConfig.user,
+            pass: smtpConfig.pass,
+          },
+        })
+      : null;
 
   async function sendEmail({ to, subject, text, html, metadata = {} }) {
     if (provider === "noop") {
@@ -74,6 +143,18 @@ export function createEmailService(env = process.env) {
         console.log("-----------------------------------------");
       }
       return { skipped: true };
+    }
+
+    if (provider === "smtp") {
+      await smtpTransporter.sendMail({
+        from,
+        to,
+        subject,
+        text,
+        html,
+      });
+
+      return { skipped: false };
     }
 
     if (provider !== "resend") {

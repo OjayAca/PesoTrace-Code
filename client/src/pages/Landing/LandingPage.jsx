@@ -202,7 +202,7 @@ export function LandingPage() {
           </p>
           <h1 className="hero-title">Track every peso with clearer monthly control.</h1>
           <p className="landing-lede text-accent-light">
-            PesoTrace helps students and beginners manage monthly budgets,
+            PesoTrace helps everyone manage monthly budgets,
             allowance or income, everyday expenses, recurring entries, and
             readable reports in a professional, focused workspace.
           </p>
@@ -237,7 +237,7 @@ export function LandingPage() {
           <p className="eyebrow">
             <PiggyBank size={14} /> Practical tracking
           </p>
-          <h2 id="landing-control-title">Built around the way student money moves.</h2>
+          <h2 id="landing-control-title">Built around the way everyone's money moves.</h2>
         </div>
 
         <div className="landing-feature-grid">
